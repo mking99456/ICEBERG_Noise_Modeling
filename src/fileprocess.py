@@ -25,7 +25,7 @@ class fileprocess:
         #For some nEvents we have 1024 channels and 2128 data points for each
         #Other nEvents are EMPTY. I remove all the empty ones
         removecount = 0
-        for i in range(141):
+        for i in range(len(npADC)):
             if(len(npADC[i-removecount])==0):
                 npADC = np.delete(npADC, i-removecount)
                 npSamples = np.delete(npSamples, i-removecount)
