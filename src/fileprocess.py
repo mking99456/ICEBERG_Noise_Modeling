@@ -31,6 +31,11 @@ class fileprocess:
                 npSamples = np.delete(npSamples, i-removecount)
                 npChannel = np.delete(npChannel, i-removecount)
                 removecount += 1
+            if(len(npADC[i-removecount][0]) != len(npADC[0][0])):
+                npADC = np.delete(npADC, i-removecount)
+                npSamples = np.delete(npSamples, i-removecount)
+                npChannel = np.delete(npChannel, i-removecount)
+                removecount += 1
         print("Number of events with data: "+str(len(npADC)))
         arrayADC = np.zeros((len(npADC),len(npADC[0]),len(npADC[0][0])), dtype=int)
         arraySamples = np.zeros((len(npSamples),len(npSamples[0])),dtype=int)
