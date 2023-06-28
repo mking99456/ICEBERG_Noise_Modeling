@@ -1,0 +1,1 @@
+Convenience directory. Contains tools for automating tasks in our software projects.
