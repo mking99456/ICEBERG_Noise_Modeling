@@ -31,18 +31,18 @@ class clockmask:
         import numpy as np
         #checking what the data looks like before
         stds = []
-        for i in range(38):
+        for i in range(len(arrayADC)):
             for j in range(len(arrayADC[i])):
                 stds.append(np.std(arrayADC[i][j]))
         print("pre-mask max std: "+str(np.max(stds)))
         print("pre-mask mean std: "+ str(np.mean(stds)))
 
 
-        for nEvent in range(38):
+        for nEvent in range(len(arrayADC)):
             #I just use this to see how far along the code is, since it usually takes a few minutes
             if(nEvent%2==0):
                 print("starting event number: " + str(nEvent))
-            for nChannel in range(1024):   
+            for nChannel in range(len(arrayADC[nEvent])):   
                 #print(str(nChannel)) 
                 #Lets mask out the peaks and replace them with a delta function that can later be taken out of the fourier transform
                 #I have a kinda complicated way of doing this but its meant to be rigorous enough to remove all peaks
@@ -87,7 +87,7 @@ class clockmask:
                         
         #comparing these numbers to the ones above in order to check the clock masking performance
         stds = []
-        for i in range(38):
+        for i in range(len(arrayADC)):
             for j in range(len(arrayADC[i])):
                 stds.append(np.std(arrayADC[i][j]))
         print("post-mask max std: "+str(np.max(stds)))
