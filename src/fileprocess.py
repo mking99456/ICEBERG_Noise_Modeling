@@ -1,6 +1,7 @@
 #processfile contains: getADC("filepath/filename.root")
-#this will likely only work for 9055 or other similar files, because of the search keyword I use for fADC, fSamples, and fChannel
-#here are the appropriate keys for 9613:
+#this will likely only work for 9055 or other similar files. I don't know why it doesn't work for 9613
+
+#here are the appropriate keys for 9613. switch them out in the code:
 #fADC = events['raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj.fADC']
 #fSamples = events['raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj.fSamples']
 #fChannel = events['raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj.fChannel']
