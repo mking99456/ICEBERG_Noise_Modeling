@@ -11,6 +11,7 @@ class fileprocess:
         import uproot
         import numpy as np
         import awkward as awk
+        from scipy import stats
         infile = uproot.open(infile_name)
         events = infile['Events']
         
@@ -31,17 +32,22 @@ class fileprocess:
         #For some nEvents we have 1024 channels and 2128 data points for each
         #Other nEvents are EMPTY. I remove all the empty ones
         removecount = 0
+        lenarray = []        
         for i in range(len(npADC)):
             if(len(npADC[i-removecount])==0):
                 npADC = np.delete(npADC, i-removecount)
                 npSamples = np.delete(npSamples, i-removecount)
                 npChannel = np.delete(npChannel, i-removecount)
                 removecount += 1
-            if(len(npADC[i-removecount][0]) != len(npADC[0][0])):
+            else:
+                lenarray.append(len(npADC[i-removecount][0]))
+        removecount = 0
+        for i in range(len(npADC)):
+            if(len(npADC[i-removecount][0]) != stats.mode(lenarray)[0]):
                 npADC = np.delete(npADC, i-removecount)
                 npSamples = np.delete(npSamples, i-removecount)
                 npChannel = np.delete(npChannel, i-removecount)
-                removecount += 1
+                removecount += 1        
         print("Number of events with data: "+str(len(npADC)))
         arrayADC = np.zeros((len(npADC),len(npADC[0]),len(npADC[0][0])), dtype=int)
         arraySamples = np.zeros((len(npSamples),len(npSamples[0])),dtype=int)
