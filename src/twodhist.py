@@ -163,3 +163,50 @@ class twodhist:
                 ax[tpc][plane].set_title("Averaged Channel ASD for TPC: " + str(tpc) + " Pixel Plane: " + planenames[plane])
         plt.show()
         return midlines
+	
+    def HistAvgASDbyPlane(data_arr):
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as mpl
+        fig,ax = plt.subplots(2,3)
+        fig.set_figheight(10)
+        fig.set_figwidth(15)
+        planenames = ["u", "v", "z"]
+        midlines = []
+        for tpc in range(len(data_arr)):
+            for plane in range(len(data_arr[tpc])):
+                arrayADC = data_arr[tpc][plane]
+                ADCFFT = np.fft.rfft(arrayADC[0][0])
+                SumASD = np.zeros((len(arrayADC[0]),len(ADCFFT)),dtype=np.complex128)
+                SampleSpacing = 0.5e-6 #0.5 microseconds per tick
+                N = len(arrayADC[0][0])
+                T = SampleSpacing*N #Period
+                freq = np.fft.rfftfreq(N,SampleSpacing)
+                #AVERAGING EACH CHANNEL ACROSS ALL EVENTS
+                #this code takes the ASDs of each channel of each event, sums, and averages them.
+                noskiparr = np.zeros(len(arrayADC[0]))
+                for nEvent in range(len(arrayADC)):
+                    for nChannel in range(len(arrayADC[nEvent])):
+                        if(abs(np.sum(arrayADC[nEvent][nChannel])) > 7000000):
+                            ADCFFT = np.fft.rfft(arrayADC[nEvent][nChannel])
+                            #we cut the first bin since Angela says it's the baseline DC offset
+                            ADCFFT[0]=0
+                            #Do we want the PSD (Power Spectral Density)?
+                            ADCPSD = 2*T/N**2 * np.abs(ADCFFT)**2 #Power Spectral Density
+                            ADCASD = np.sqrt(ADCPSD) #Amplitude Spectral Density
+                            SumASD[nChannel] += abs(ADCASD)
+                            noskiparr[nChannel] += 1
+                SumASD = SumASD[noskiparr > 0]
+                noskiparr = noskiparr[noskiparr > 0]
+                AvgASD = SumASD
+                for nChannel in range(len(SumASD)):
+                    AvgASD[nChannel] = SumASD[nChannel]/int(noskiparr[nChannel])
+                    ax[tpc][plane].plot(freq,SumASD[nChannel],color = (nChannel/len(SumASD),0.0,0.0))
+			        #Add custom colors here. For now, this is fine...
+                ax[tpc][plane].set_ylim(0,0.10)
+                ax[tpc][plane].set_xlabel("Freq [1e6 Hz]")
+                ax[tpc][plane].set_ylabel("ADC strain noise [1/Hz^0.5]")
+                ax[tpc][plane].set_title("Averaged Channel ASD for TPC: " + str(tpc) + " Pixel Plane: " + planenames[plane])
+        plt.show()
+        return midlines
+	
