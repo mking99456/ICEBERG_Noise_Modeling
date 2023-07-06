@@ -160,14 +160,15 @@ class twodhist:
                 ax[tpc][plane].set_xlabel("Freq [1e6 Hz]")
                 ax[tpc][plane].set_ylabel("ADC strain noise [1/Hz^0.5]")
                 fig.colorbar(h[3], ax=ax[tpc][plane])
-                ax[tpc][plane].set_title("Averaged Channel ASD for TPC: " + str(tpc) + " Pixel Plane: " + planenames[plane])
+                ax[tpc][plane].set_title("Averaged Channel ASD for TPC: " + str(tpc) + " Wire Cell: " + planenames[plane])
         plt.show()
         return midlines
-	
     def HistAvgASDbyPlane(data_arr):
         import numpy as np
         import matplotlib.pyplot as plt
-        
+        import matplotlib as mpl
+        from mpl_toolkits.axes_grid1 import make_axes_locatable   
+             
         #For plot of ASDs
         fig,ax = plt.subplots(2,3,num=1)
         fig.set_figheight(10)
@@ -235,5 +236,4 @@ class twodhist:
                 ax2[tpc][plane].set_xlabel("Freq Hz")
                 ax2[tpc][plane].set_ylabel("Channel Number [1/Hz^0.5]")
                 ax2[tpc][plane].set_title("Averaged Channel ASD for TPC: " + str(tpc) + " Pixel Plane: " + planenames[plane])
-        plt.show()
-	
+        plt.show() 
