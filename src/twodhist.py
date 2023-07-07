@@ -14,8 +14,7 @@ class twodhist:
         maxes = []
         for array in hist:
             maxes.append(np.where(array == max(array))[0][0])
-        max_bins = [ycenters[i] for i in maxes]
-
+        max_bins = [ycenters[i] for i in maxes]        
         return xcenters, max_bins
     def histAvgASD(arrayADC, binnum):
         import numpy as np
@@ -105,51 +104,31 @@ class twodhist:
         fig.colorbar(h[3],ax=ax)
         plt.show()
         
-    def HistASDbyPlane(data_arr, binnum):
+    def HistASDbyPlane(data_arr):
         import numpy as np
         import matplotlib.pyplot as plt
         import matplotlib.colors as mpl
+        binnum = 300
         fig,ax = plt.subplots(2,3)
         fig.set_figheight(10)
         fig.set_figwidth(15)
         planenames = ["u", "v", "z"]
         midlines = []
+        AvgASD = data_arr
         for tpc in range(len(data_arr)):
             for plane in range(len(data_arr[tpc])):
-                arrayADC = data_arr[tpc][plane]
-                ADCFFT = np.fft.rfft(arrayADC[0][0])
-                SumASD = np.zeros((len(arrayADC[0]),len(ADCFFT)),dtype=np.complex128)
                 SampleSpacing = 0.5e-6 #0.5 microseconds per tick
-                N = len(arrayADC[0][0])
-                T = SampleSpacing*N #Period
+                N = 2128
                 freq = np.fft.rfftfreq(N,SampleSpacing)
-                #AVERAGING EACH CHANNEL ACROSS ALL EVENTS
-                #this code takes the ASDs of each channel of each event, sums, and averages them.
-                noskiparr = np.zeros(len(arrayADC[0]))
-                for nEvent in range(len(arrayADC)):
-                    for nChannel in range(len(arrayADC[nEvent])):
-                        if(abs(np.sum(arrayADC[nEvent][nChannel])) > 7000000):
-                            ADCFFT = np.fft.rfft(arrayADC[nEvent][nChannel])
-                            #we cut the first bin since Angela says it's the baseline DC offset
-                            ADCFFT[0]=0
-                            #Do we want the PSD (Power Spectral Density)?
-                            ADCPSD = 2*T/N**2 * np.abs(ADCFFT)**2 #Power Spectral Density
-                            ADCASD = np.sqrt(ADCPSD) #Amplitude Spectral Density
-                            SumASD[nChannel] += abs(ADCASD)
-                            noskiparr[nChannel] += 1
-                SumASD = SumASD[noskiparr > 0]
-                noskiparr = noskiparr[noskiparr > 0]
-                AvgASD = SumASD
-                for nChannel in range(len(SumASD)):
-                    AvgASD[nChannel] = SumASD[nChannel]/int(noskiparr[nChannel])
                 #The 2d histogram takes only 1d arrays
                 #so we have to flatten out our AvgASD array into one long array
                 #also we have to do the same for the frequencies
                 longASD = np.empty(0,dtype=float)
                 longFreq = np.empty(0,dtype=float)
-                for channel in range(len(AvgASD)):
-                    longASD = np.concatenate((longASD, abs(AvgASD[channel])))
+                for channel in range(len(AvgASD[tpc][plane])):
+                    longASD = np.concatenate((longASD, abs(AvgASD[tpc][plane][channel])))
                     longFreq = np.concatenate((longFreq, freq))
+                    
                 h = ax[tpc][plane].hist2d(longFreq/1e6, longASD, bins=(binnum,binnum), \
                             norm=mpl.LogNorm(vmax=1.1e3), cmap=plt.cm.jet)
                 #plot the midline of the heatmap
@@ -163,70 +142,84 @@ class twodhist:
                 ax[tpc][plane].set_title("Averaged Channel ASD for TPC: " + str(tpc) + " Wire Cell: " + planenames[plane])
         plt.show()
         return midlines
-    def HistAvgASDbyPlane(data_arr):
+    def getASDs(data_arr, numtpcs, numplanes, maxwires, ASDlength, SampleSpacing):
+        #THIS CODE takes in an array of sorted data, shape 2x3x38x240x2128, and returns a sorted array of each waveform's ASD, in the shape 2x3x240x1065. 
+        # It also returns an array of the number of entries in each channel, used later for averaging across files
+        import numpy as np
+        returnASD = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
+        returnNoSkips = np.zeros((numtpcs,numplanes,maxwires),dtype=int)
+        for tpc in range(len(data_arr)):
+            for plane in range(len(data_arr[tpc])):
+                arrayADC = data_arr[tpc][plane]
+                ADCFFT = np.fft.rfft(arrayADC[0][0])
+                SumASD = np.zeros((len(arrayADC[0]),len(ADCFFT)),dtype=np.complex128)
+                N = len(arrayADC[0][0])
+                T = SampleSpacing*N #Period
+                #AVERAGING EACH CHANNEL ACROSS ALL EVENTS
+                #this code takes the ASDs of each channel of each event, sums, and averages them.
+                noskiparr = np.zeros(len(arrayADC[0]))
+                for nEvent in range(len(arrayADC)):
+                    for nChannel in range(len(arrayADC[nEvent])):
+                        if(abs(np.sum(arrayADC[nEvent][nChannel])) > 7000000): #this statement ensures that we only take the FFT of data that exists
+                            ADCFFT = np.fft.rfft(arrayADC[nEvent][nChannel])
+                            #we cut the first bin since Angela says it's the baseline DC offset
+                            ADCFFT[0]=0
+                            #Do we want the PSD (Power Spectral Density)?
+                            ADCPSD = 2*T/N**2 * np.abs(ADCFFT)**2 #Power Spectral Density
+                            ADCASD = np.sqrt(ADCPSD) #Amplitude Spectral Density
+                            SumASD[nChannel] += abs(ADCASD)
+                            noskiparr[nChannel] += 1
+                AvgASD = SumASD
+                returnASD[tpc][plane] = abs(AvgASD)
+                returnNoSkips[tpc][plane] = noskiparr
+        return returnASD, returnNoSkips
+    def HistAvgASDbyPlane(data_arr, numtpcs, numplanes, maxwires, minwvfm, SampleSpacing):
         import numpy as np
         import matplotlib.pyplot as plt
         import matplotlib as mpl
         from mpl_toolkits.axes_grid1 import make_axes_locatable   
              
         #For plot of ASDs
-        fig,ax = plt.subplots(2,3,num=1)
+        fig,ax = plt.subplots(numtpcs,numplanes,num=1)
         fig.set_figheight(10)
         fig.set_figwidth(15)
         
-        colorvalues = mpl.cm.viridis(range(240))
+        colorvalues = mpl.cm.viridis(range(maxwires))
         divider = make_axes_locatable(plt.gca())
         ax_cb = divider.new_horizontal(size="5%", pad=0.05)    
-        cb1 = mpl.colorbar.ColorbarBase(ax_cb, cmap=mpl.cm.viridis, orientation='vertical',boundaries = np.arange(241),values = colorvalues)
+        cb1 = mpl.colorbar.ColorbarBase(ax_cb, cmap=mpl.cm.viridis, orientation='vertical',boundaries = np.arange(maxwires+1),values = colorvalues)
         plt.gcf().add_axes(ax_cb)
         
         #For plot of freq v. channel # v. color
-        fig2,ax2 = plt.subplots(2,3,num=2)
-        fig2.set_figheight(10)
-        fig2.set_figwidth(15)
+        fig2,ax2 = plt.subplots(numtpcs,numplanes,num=2)
+        fig2.set_figheight(numtpcs*5)
+        fig2.set_figwidth(numplanes*5)
         
         planenames = ["u", "v", "z"]
         
-        maxAvgASDvalue = 0
+        AvgASD = data_arr
+        
         for tpc in range(len(data_arr)):
             for plane in range(len(data_arr[tpc])):
-                arrayADC = data_arr[tpc][plane]
-                ADCFFT = np.fft.rfft(arrayADC[0][0])
-                SumASD = np.zeros((len(arrayADC[0]),len(ADCFFT)),dtype=np.float64)
-                SampleSpacing = 0.5e-6 #0.5 microseconds per tick
-                N = len(arrayADC[0][0])
-                T = SampleSpacing*N #Period
+                N = minwvfm
                 freq = np.fft.rfftfreq(N,SampleSpacing)
-                #AVERAGING EACH CHANNEL ACROSS ALL EVENTS
-                #this code takes the ASDs of each channel of each event, sums, and averages them.
-                noskiparr = np.zeros(len(arrayADC[0]))
-                for nEvent in range(len(arrayADC)):
-                    for nChannel in range(len(arrayADC[nEvent])):
-                        if(abs(np.sum(arrayADC[nEvent][nChannel])) > 7000000):
-                            ADCFFT = np.fft.rfft(arrayADC[nEvent][nChannel])
-                            #we cut the first bin since Angela says it's the baseline DC offset
-                            ADCFFT[0]=0
-                            #Do we want the PSD (Power Spectral Density)?
-                            ADCPSD = 2*T/N**2*np.abs(ADCFFT)**2 #Power Spectral Density
-                            ADCASD = np.sqrt(ADCPSD) #Amplitude Spectral Density
-                            SumASD[nChannel] += ADCASD
-                            noskiparr[nChannel] += 1
-                AvgASD = SumASD
-                if (maxAvgASDvalue < np.max(AvgASD)):
-                        maxAvgASDvalue = np.max(AvgASD)
-                for nChannel in range(len(SumASD)):
-                    if (noskiparr[nChannel]==0):
-                        continue
-                    AvgASD[nChannel] = SumASD[nChannel]/int(noskiparr[nChannel])
+                #The 2d histogram takes only 1d arrays
+                #so we have to flatten out our AvgASD array into one long array
+                #also we have to do the same for the frequencies
+                longASD = np.empty(0,dtype=float)
+                longFreq = np.empty(0,dtype=float)
+                for channel in range(len(AvgASD[tpc][plane])):
+                    longASD = np.concatenate((longASD, abs(AvgASD[tpc][plane][channel])))
+                    longFreq = np.concatenate((longFreq, freq))
                 
                 #For 2D plot
                 cmap = mpl.cm.get_cmap('viridis')
                 cmap.set_under('white')
-                ax2[tpc][plane].pcolormesh(freq,range(240),np.log(AvgASD),cmap = cmap,shading='gouraud', vmin=np.log(.0001),vmax=np.log(.1))
+                ax2[tpc][plane].pcolormesh(freq,range(maxwires),np.log(AvgASD[tpc][plane]),cmap = cmap,shading='gouraud', vmin=np.log(.0001),vmax=np.log(.1))
                 
                 #For ASD Plot
-                for nChannel in range(len(SumASD)):
-                    ax[tpc][plane].scatter(freq,AvgASD[nChannel],s=0.05,color = colorvalues[nChannel])
+                for nChannel in range(len(AvgASD[tpc][plane])):
+                    ax[tpc][plane].scatter(freq,AvgASD[tpc][plane][nChannel],s=0.05,color = colorvalues[nChannel])
                     
                 ax[tpc][plane].set_ylim(0,0.10)
                 ax[tpc][plane].set_xlabel("Freq [1e6 Hz]")

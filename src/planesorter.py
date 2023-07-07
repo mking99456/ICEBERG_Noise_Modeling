@@ -1,12 +1,13 @@
 #using an array of ADC data and an array of channel numbers
 #sorts it into an array by tpc/plane/event/channel/waveform
-#returns lots of empty data which I manually ignore later
+#returns lots of empty data which I ignore later
+
+#this all based off the ICEBERG documentation
 class planesorter:
     def sortdata(arrayADC, arrayChannel):
         import numpy as np
         import math
-        dataarray = np.zeros((2,3,len(arrayADC),240,len(arrayADC[0][0])))
-
+        dataarray = np.zeros((2,3,len(arrayADC),240,2128))
         for nEvent in range(len(arrayADC)):
             for nChannel in range(len(arrayADC[nEvent])):
                 currentchannel =  arrayChannel[nEvent][nChannel]
