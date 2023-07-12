@@ -42,11 +42,9 @@ class myprocessor:
         events = infile['Events']
         
         fADC = events['raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder./raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj/raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj.fADC']
-        fSamples = events['raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder./raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj/raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj.fSamples']
         fChannel = events['raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder./raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj/raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj.fChannel']
 
         ADCarr = fADC.array(library = "ak")
-        Samplesarr = fSamples.array(library = "ak")
         Channelarr = fChannel.array(library = "ak")
 
         #We end up with lots of empty events, so when we convert from an awk array to a np array we only take the events with data
@@ -69,7 +67,6 @@ class myprocessor:
             for nChannel in range(len(ADCarr[counter[0]])):
                 if(abs(np.sum(ADCarr[counter[nEvent]][nChannel])>10)):
                     CurrentWVFM = ak.to_numpy(ADCarr[counter[nEvent]][nChannel])
-                    CurrentSample = Samplesarr[counter[index]][nChannel]
                     CurrentChannel = Channelarr[counter[index]][nChannel]
                     CurrentWVFM = CurrentWVFM[0:minwvfm]
 
