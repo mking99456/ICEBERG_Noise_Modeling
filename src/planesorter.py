@@ -7,7 +7,7 @@ class planesorter:
     def sortdata(arrayADC, arrayChannel):
         import numpy as np
         import math
-        dataarray = np.zeros((2,3,len(arrayADC),240,2128))
+        dataarray = np.zeros((2,3,len(arrayADC),240,2128), dtype=np.uint32)
         for nEvent in range(len(arrayADC)):
             for nChannel in range(len(arrayADC[nEvent])):
                 currentchannel =  arrayChannel[nEvent][nChannel]
