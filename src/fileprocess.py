@@ -6,7 +6,7 @@
 #fChannel = events['raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj.fChannel']
 
 
-class fileprocess:
+class fileprocess:        
     def getADC(infile_name,minwvfm,numchannels):
         import uproot
         import awkward as ak

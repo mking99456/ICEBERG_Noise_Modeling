@@ -93,3 +93,42 @@ class clockmask:
         print("post-mask max std: "+str(np.max(stds)))
         print("post-mask mean std: " + str(np.mean(stds)))
         return arrayADC
+    def mask_single_wvfm(waveform):
+        import numpy as np
+        noiseSTD, noiseMean = clockmask.recursive_stats(waveform)  
+                
+        #keeping track of indexes we masked out
+        switchedArr = np.zeros((len(waveform)),dtype=bool)
+                
+        #classic threshold mask. anything varied by >6*noiseSTD get replaced with the mean
+        for datapt in range(0,len(waveform)):
+            if((waveform[datapt] > noiseMean+6*noiseSTD)|(waveform[datapt] < noiseMean-6*noiseSTD)):
+                waveform[datapt] = noiseMean
+                switchedArr[datapt] = True
+        #then we go back through and wherever we masked out a peak, we trace backwards and keep masking data points until we drop within 2 standard deviations of the mean.
+                #we do this again for the forward direction
+        for datapt in range(1,len(waveform)-1):
+            if(switchedArr[datapt]):
+                if(not(switchedArr[datapt-1])):
+                    j=1
+                    while((waveform[datapt-j]>noiseMean+2*noiseSTD)|(waveform[datapt-j]<noiseMean-2*noiseSTD)):
+                        waveform[datapt-j] = noiseMean
+                        switchedArr[datapt-j] = True
+                        j+=1
+                        if(datapt-j == 0):
+                            break
+                if(not(switchedArr[datapt+1])):
+                    j=1
+                    while((waveform[datapt+j]>noiseMean+2*noiseSTD)|(waveform[datapt+j]<noiseMean-2*noiseSTD)):
+                        waveform[datapt+j] = noiseMean
+                        switchedArr[datapt+j] = True
+                        j+=1
+                        if(datapt+j == len(waveform)):
+                            break
+                #then as a final check, we go through our data again and say, for every data point, if both the datapoint to the right and to the left have been masked, mask that
+                #data point out too. this is just to make sure that section in between bimodal peaks doesn't slip through the cracks.
+        for datapt in range(1,len(waveform)-1):
+            if(switchedArr[datapt+1]&switchedArr[datapt-1]):
+                switchedArr[datapt] = True
+                waveform[datapt] = noiseMean
+        return waveform

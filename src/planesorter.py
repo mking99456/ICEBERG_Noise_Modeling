@@ -24,3 +24,16 @@ class planesorter:
                     channelnum -= 40
                 dataarray[tpcnum][tpcplane][nEvent][channelnum] = arrayADC[nEvent][nChannel]
         return dataarray
+    def sort_single_data(currentchannel):
+        channelnum = currentchannel
+        if(currentchannel > 999):
+            currentchannel -= 40
+            if(currentchannel > 1199):
+                currentchannel -= 40
+        planenum = int(currentchannel/200) #num 0-5. 0,2,4 go to TPC 0. 1,3,5 go to TPC 1
+        tpcnum = planenum%2 #0 or 1, tpc number
+        tpcplane = int(planenum/2) #plane num within tpc, 0 to 2
+        channelnum -= planenum*200
+        if(planenum == 5):
+            channelnum -= 40
+        return tpcnum, tpcplane, channelnum
