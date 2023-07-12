@@ -69,8 +69,8 @@ class myprocessor:
             for nChannel in range(len(ADCarr[counter[0]])):
                 if(abs(np.sum(ADCarr[counter[nEvent]][nChannel])>10)):
                     CurrentWVFM = ak.to_numpy(ADCarr[counter[nEvent]][nChannel])
-                    CurrentSample = Samplesarr[counter[index]][nChannel]
-                    CurrentChannel = Channelarr[counter[index]][nChannel]
+                    CurrentSample = Samplesarr[counter[nEvent]][nChannel]
+                    CurrentChannel = Channelarr[counter[nEvent]][nChannel]
                     CurrentWVFM = CurrentWVFM[0:minwvfm]
 
                     #MASK OUT THE CLOCK SIGNALS OR OTHER TRIGGERS
@@ -87,6 +87,32 @@ class myprocessor:
         timeelapsed = endtime-starttime
         print("DONE PROCESSING " + printname + " IN " + str(int(timeelapsed/60))+":"+str(int(timeelapsed%60)))
         return returnASD, TotalEvents, returnNoSkips, returnPSD
+    def onefileresilient(filename):
+        import sys, time
+        import numpy as np
+        starttime=time.time()
+        try:
+            tempASDs, tempEvents, tempNoSkips, tempPSDs = myprocessor.onefilefast(filename)
+            return tempASDs, tempEvents, tempNoSkips, tempPSDs
+        except Exception as e:
+            crash=["Error on line {}".format(sys.exc_info()[-1].tb_lineno),"\n",e]
+            print(crash)
+            timeX=str(time.time()-starttime)
+            with open('/home/poshu/Documents/jupyter_scripts/CRASH-'+timeX+'.txt', "w") as crashlog:
+                mytime = time.gmtime(time.time())
+                crashlog.write("Crash Occurred On: " +str(mytime[1])+"/"+str(mytime[2])+"/"+str(mytime[0])+" At " + str(mytime[3])+":"+str(mytime[4])+":"+str(mytime[5]))
+                for i in crash:
+                    i=str(i)
+                    crashlog.write(i)
+            numtpcs = 2
+            numplanes = 3
+            maxwires = 240
+            ASDlength = 1065 #the length of the ASD of the minwvfm
+            returnASD = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
+            returnPSD = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
+            returnNoSkips = np.zeros((numtpcs,numplanes,maxwires),dtype=int)
+            TotalEvents = 0
+            return returnASD, TotalEvents, returnNoSkips, returnPSD 
     def multiprocess(filenames,numfiles,NumProcessors):
         from twodhist import twodhist as hist
         import numpy as np
@@ -106,9 +132,9 @@ class myprocessor:
         ASDarray = np.zeros((numtpcs,numplanes,maxwires,ASDlength), dtype=float)
         PSDarray = np.zeros((numtpcs,numplanes,maxwires,ASDlength), dtype=float)
         noskips = np.zeros((numtpcs,numplanes,maxwires), dtype=int)
-        filenames=filenames[1:1+numfiles]
+        filenames=filenames[0:numfiles]
         
-        for tempASDs, tempEvents, tempNoSkips, tempPSDs in exe.map(myprocessor.onefilefast, filenames):
+        for tempASDs, tempEvents, tempNoSkips, tempPSDs in exe.map(myprocessor.onefileresilient, filenames):
             TotalEvents += tempEvents
             ASDarray += tempASDs
             PSDarray += tempPSDs

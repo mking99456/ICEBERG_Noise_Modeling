@@ -147,12 +147,14 @@ class twodhist:
         # It also returns an array of the number of entries in each channel, used later for averaging across files
         import numpy as np
         returnASD = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
+        returnPSD = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
         returnNoSkips = np.zeros((numtpcs,numplanes,maxwires),dtype=int)
         for tpc in range(len(data_arr)):
             for plane in range(len(data_arr[tpc])):
                 arrayADC = data_arr[tpc][plane]
                 ADCFFT = np.fft.rfft(arrayADC[0][0])
-                SumASD = np.zeros((len(arrayADC[0]),len(ADCFFT)),dtype=np.complex128)
+                SumASD = np.zeros((len(arrayADC[0]),len(ADCFFT)),dtype=float)
+                SumPSD = np.zeros((len(arrayADC[0]),len(ADCFFT)),dtype=float)
                 N = len(arrayADC[0][0])
                 T = SampleSpacing*N #Period
                 #AVERAGING EACH CHANNEL ACROSS ALL EVENTS
@@ -168,11 +170,23 @@ class twodhist:
                             ADCPSD = 2*T/N**2 * np.abs(ADCFFT)**2 #Power Spectral Density
                             ADCASD = np.sqrt(ADCPSD) #Amplitude Spectral Density
                             SumASD[nChannel] += abs(ADCASD)
+                            SumPSD[nChannel] += abs(ADCPSD)
                             noskiparr[nChannel] += 1
                 AvgASD = SumASD
+                AvgPSD = SumPSD
                 returnASD[tpc][plane] = abs(AvgASD)
+                returnPSD[tpc][plane] = abs(AvgPSD)
                 returnNoSkips[tpc][plane] = noskiparr
-        return returnASD, returnNoSkips
+        return returnASD, returnNoSkips, returnPSD
+    def get_single_ASDPSD(waveform, SampleSpacing):
+        import numpy as np
+        ADCFFT = np.fft.rfft(waveform)
+        N = len(waveform)
+        T = SampleSpacing*N
+        ADCFFT[0] = 0
+        ADCPSD = 2*T/N**2 * np.abs(ADCFFT)**2
+        ADCASD = np.sqrt(ADCPSD)
+        return ADCASD, ADCPSD
     def HistAvgASDbyPlane(data_arr, numtpcs, numplanes, maxwires, minwvfm, SampleSpacing):
         import numpy as np
         import matplotlib.pyplot as plt
