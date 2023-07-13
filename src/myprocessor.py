@@ -13,6 +13,7 @@ class myprocessor:
         minwvfm = 2128
         ASDlength = 1065 #the length of the ASD of the minwvfm
         SampleSpacing = 0.5e-6 #0.5 microseconds per tick
+        
         infile = uproot.open(infile_name)
         printname = infile_name[44:60]
         events = infile['Events']
@@ -20,26 +21,32 @@ class myprocessor:
         fADC = events['raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder./raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj/raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj.fADC']
         fChannel = events['raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder./raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj/raw::RawDigits_tpcrawdecoder_daq_RunIcebergRawDecoder.obj.fChannel']
 
+        #Switch to int16 ASAP in order to minimize memory usage. Doesn't really work though!
         ADCarr = fADC.array(library = "ak")
         ak.values_astype(ADCarr, np.uint16)
         Channelarr = fChannel.array(library = "ak")
         ak.values_astype(Channelarr, np.uint16)
 
         #We end up with lots of empty events, so when we convert from an awk array to a np array we only take the events with data
-        #What events have data?
+        
+        #Find out events have data
         counter = []
         for index in range(len(ADCarr)):
             if(ak.count(ADCarr[index]) >= numchannels*(minwvfm/2)):
                 counter.append(index)
-                
+
+        #Data to return
         returnASD = np.empty((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
         returnPSD = np.empty((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
         returnFFT = np.empty((numtpcs,numplanes,maxwires,ASDlength),dtype=np.complex64)
         returnNoSkips = np.empty((numtpcs,numplanes,maxwires),dtype=np.uint16)
         returnCorr = np.empty((numtpcs,numplanes,maxwires,maxwires),dtype=float)
         TotalEvents = len(counter)
+        
         print("BEGAN PROCESSING: " + printname + " CONTAINING "+ str(TotalEvents) + " EVENTS")
+        #We iterate through the events and the channels, inspecting and processing one waveform at a time
         for nEvent in range(len(counter)):
+            #We sort the waveforms by TPC/Plane so that we can find the correlation coefficients of all of them
             SortedWaveforms = np.empty((numtpcs,numplanes,maxwires,minwvfm), dtype=int)
             if(nEvent == int(len(counter)/2)):
                 midtime = time.time()
@@ -51,20 +58,24 @@ class myprocessor:
                     CurrentChannel = Channelarr[counter[nEvent]][nChannel]
                     CurrentWVFM = CurrentWVFM[0:minwvfm]
 
-                    #MASK OUT THE CLOCK SIGNALS OR OTHER TRIGGERS
+                    #Mask out the clock signals and other triggers
                     CurrentWVFM = myprocessor.mask_fast(CurrentWVFM)
                     #Get TPC/Plane/Channel
                     TPCNum, PlaneNum, ChannelNum = myprocessor.sort_single_data(CurrentChannel)
+                    #Sort our current waveform
                     SortedWaveforms[TPCNum][PlaneNum][ChannelNum] = CurrentWVFM
-                    #Get ASD/PSD
+                    #Get ASD/PSD/FFT
                     ADCASD, ADCPSD, ADCFFT = myprocessor.get_single_ASDPSDFFT(CurrentWVFM, SampleSpacing)
                     
+                    #Input our current ASD/PSD/FFT where it belongs
                     returnASD[TPCNum][PlaneNum][ChannelNum] += ADCASD
                     returnPSD[TPCNum][PlaneNum][ChannelNum] += ADCPSD
                     returnFFT[TPCNum][PlaneNum][ChannelNum] += np.complex64(ADCFFT)
+                    #We keep track of how many events contributed to each channel sum so that we can average correctly later
                     returnNoSkips[TPCNum][PlaneNum][ChannelNum] += 1
             for tpc in range(numtpcs):
                 for plane in range(numplanes):
+                    #Now we can find the correlation coefficients of each wire plane
                     returnCorr[tpc][plane] += np.corrcoef(SortedWaveforms[tpc][plane])
         endtime = time.time()
         timeelapsed = endtime-starttime
@@ -75,16 +86,20 @@ class myprocessor:
         import sys, time
         import numpy as np
         starttime=time.time()
+        
+        #We "try" so that if the file crashes the rest of the system keeps going
         try:
             tempASDs, tempEvents, tempNoSkips, tempPSDs, tempCorr, tempFFT = myprocessor.onefilefast(filename)
             return tempASDs, tempEvents, tempNoSkips, tempPSDs, tempCorr, tempFFT
         except Exception as e:
+            #We log the crash + return empty datasets
             crash=["Error on line {}".format(sys.exc_info()[-1].tb_lineno),"\n",e]
             print(crash)
             timeX=str(time.time()-starttime)
             with open('/dune/app/users/poshung/multirun/CRASH-'+timeX+'.txt', "w") as crashlog:
                 mytime = time.gmtime(time.time())
                 crashlog.write("Crash Occurred On: " +str(mytime[1])+"/"+str(mytime[2])+"/"+str(mytime[0])+" At " + str(mytime[3])+":"+str(mytime[4])+":"+str(mytime[5]))
+                crashlog.write("Crash Occurred While Processing: " + filename[44:60])
                 for i in crash:
                     i=str(i)
                     crashlog.write(i)
@@ -98,7 +113,7 @@ class myprocessor:
             returnNoSkips = np.empty((numtpcs,numplanes,maxwires),dtype=np.uint16)
             returnCorr = np.empty((numtpcs,numplanes,maxwires,maxwires),dtype=float)
             TotalEvents = 0
-            return returnASD, TotalEvents, returnNoSkips, returnPSD, returnCorr
+            return returnASD, TotalEvents, returnNoSkips, returnPSD, returnCorr, returnFFT
         
     def multiprocess(filenames,numfiles,NumProcessors):
         import numpy as np
@@ -120,8 +135,10 @@ class myprocessor:
         FFTarray = np.empty((numtpcs,numplanes,maxwires,ASDlength), dtype=np.complex_)
         noskips = np.empty((numtpcs,numplanes,maxwires), dtype=int)
         rCorr = np.empty((numtpcs,numplanes,maxwires,maxwires), dtype=float)
-        filenames=filenames[2:2+numfiles]
+
+        filenames=filenames[0:numfiles]
         
+        #This is the step that actually runs the processes
         for tempASDs, tempEvents, tempNoSkips, tempPSDs, tempCorr, tempFFT in exe.map(myprocessor.onefileresilient, filenames):
             TotalEvents += tempEvents
             ASDarray += tempASDs
@@ -131,16 +148,11 @@ class myprocessor:
             FFTarray += tempFFT
             print("Events Processed: "+str(TotalEvents))
             
-            
+        #We square the correlations because we have to divide by noskips twice because this data is saved along two axes
         rCorr = np.square(rCorr)
-        """for run in range(10):
-            tempASDs, tempEvents, tempNoSkips = myprocessor.onefile(filenames,run,numtpcs,numchannels,maxwires,minwvfm,ASDlength,SampleSpacing)
-            TotalEvents += tempEvents
-            ASDarray += tempASDs #Add to a running sum
-            noskips += tempNoSkips#Lots of empty data, so for our averaging to work out we keep an array storing the number of events that contributed to each channel sum="""
                 
         print("BEGINNING FINAL STEP")
-        for tpc in range(numtpcs): #This is the averaging I was talking about
+        for tpc in range(numtpcs): #This is the averaging out I was talking about
             for plane in range(numplanes):
                 for nChannel in range(maxwires):
                     if(noskips[tpc][plane][nChannel] > 0):
@@ -148,9 +160,7 @@ class myprocessor:
                         PSDarray[tpc][plane][nChannel] = PSDarray[tpc][plane][nChannel]/noskips[tpc][plane][nChannel]
                         FFTarray[tpc][plane][nChannel] = FFTarray[tpc][plane][nChannel]/noskips[tpc][plane][nChannel]
                         rCorr[tpc][plane][nChannel] = rCorr[tpc][plane][nChannel]/noskips[tpc][plane][nChannel]
-                        rCorr[tpc][plane][:maxwires][nChannel] = rCorr[tpc][plane][:maxwires][nChannel]/noskips[tpc][plane][nChannel]
-        myprocessor.HistAvgPSDbyPlane(PSDarray,numtpcs,numplanes,maxwires,minwvfm,SampleSpacing) #Plot our averaged data
-        myprocessor.plotrCorr(rCorr,numtpcs,numplanes)
+                        rCorr[tpc][plane][:maxwires][nChannel] = rCorr[tpc][plane][:maxwires][nChannel]/noskips[tpc][plane][nChannel] #Have to average along both axes!
         return ASDarray, TotalEvents, noskips, PSDarray, rCorr, FFTarray
     
     #this is the recursive method to return the noise-free mean and std of a waveform
@@ -161,8 +171,6 @@ class myprocessor:
         first_half = data_arr[0:int(data_len/2)+int(data_len/40)]
         second_half = data_arr[int(data_len/2)-int(data_len/40):data_len]
         
-        #un-commenting my plot and print statements gives some demonstration of how this method works.
-
         #then we ask if the std of the full length array is below 10. this is our way of asking if there are any clock signals in the data.
         #if it is, we return the mean and standard deviation. if it's not, then we take the half of the data with less signal and call the function again, except only on that half.
         #this method should try to get away from/avoid any actual signal as soon as possible, since big spikes will skew the standard deviation of that half.
@@ -179,51 +187,14 @@ class myprocessor:
                 return myprocessor.recursive_stats(first_half)
             else:
                 return myprocessor.recursive_stats(second_half)
-            
-    def mask_single_wvfm(waveform):
-        import numpy as np
-        noiseSTD, noiseMean = myprocessor.recursive_stats(waveform)  
-                
-        #keeping track of indexes we masked out
-        switchedArr = np.zeros((len(waveform)),dtype=bool)
-                
-        #classic threshold mask. anything varied by >6*noiseSTD get replaced with the mean
-        for datapt in range(0,len(waveform)):
-            if((waveform[datapt] > noiseMean+6*noiseSTD)|(waveform[datapt] < noiseMean-6*noiseSTD)):
-                waveform[datapt] = noiseMean
-                switchedArr[datapt] = True
-        #then we go back through and wherever we masked out a peak, we trace backwards and keep masking data points until we drop within 2 standard deviations of the mean.
-                #we do this again for the forward direction
-        for datapt in range(1,len(waveform)-1):
-            if(switchedArr[datapt]):
-                if(not(switchedArr[datapt-1])):
-                    j=1
-                    while((waveform[datapt-j]>noiseMean+2*noiseSTD)|(waveform[datapt-j]<noiseMean-2*noiseSTD)):
-                        waveform[datapt-j] = noiseMean
-                        switchedArr[datapt-j] = True
-                        j+=1
-                        if(datapt-j == 0):
-                            break
-                if(not(switchedArr[datapt+1])):
-                    j=1
-                    while((waveform[datapt+j]>noiseMean+2*noiseSTD)|(waveform[datapt+j]<noiseMean-2*noiseSTD)):
-                        waveform[datapt+j] = noiseMean
-                        switchedArr[datapt+j] = True
-                        j+=1
-                        if(datapt+j == len(waveform)):
-                            break
-                #then as a final check, we go through our data again and say, for every data point, if both the datapoint to the right and to the left have been masked, mask that
-                #data point out too. this is just to make sure that section in between bimodal peaks doesn't slip through the cracks.
-        for datapt in range(1,len(waveform)-1):
-            if(switchedArr[datapt+1]&switchedArr[datapt-1]):
-                switchedArr[datapt] = True
-                waveform[datapt] = noiseMean
-        return waveform
+
     def mask_fast(CurrentWVFM):
         import numpy as np
-        import time
+        #Get the mean/std
         noisestd, noisemean = myprocessor.recursive_stats(CurrentWVFM)
+        #Get the peaks
         peaks = np.where(abs(CurrentWVFM-noisemean)>6*noisestd)[0]
+        #Then from every peak we trace backward/forward to cut out the whole signal
         for wvfmindex in peaks:
             i = wvfmindex
             while((abs(CurrentWVFM[i]-noisemean)>2*noisestd)&(i>=0)):
@@ -235,6 +206,7 @@ class myprocessor:
                 i+=1
         return CurrentWVFM
     def sort_single_data(currentchannel):
+        #Gets the tpc/plane/channel from a channel number
         channelnum = currentchannel
         if(currentchannel > 999):
             currentchannel -= 40
@@ -264,6 +236,7 @@ class myprocessor:
         return xcenters, max_bins
    
     def get_single_ASDPSDFFT(waveform, SampleSpacing):
+        #Gets the ASD PSD and FFT
         import numpy as np
         ADCFFT = np.fft.rfft(waveform)
         N = len(waveform)
@@ -286,7 +259,7 @@ class myprocessor:
         
         colorvalues = mpl.cm.viridis(range(maxwires))
         divider = make_axes_locatable(plt.gca())
-        ax_cb = divider.new_horizontal(size="5%", pad=0.05)    
+        ax_cb = divider.new_horizontal(size="5%", pad=0.05)
         cb1 = mpl.colorbar.ColorbarBase(ax_cb, cmap=mpl.cm.viridis, orientation='vertical',boundaries = np.arange(maxwires+1),values = colorvalues)
         plt.gcf().add_axes(ax_cb)
         

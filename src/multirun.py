@@ -4,7 +4,7 @@ import numpy as np
 #How many files do you want to analyze?
 #How many workers do you want to use?
 numfiles = 20
-numcores = 2
+numcores = 3
 
 #Read our lists of file paths
 with open('/dune/data/users/mking/ICEBERG_Run5_Decoded/filelist.txt') as f:
