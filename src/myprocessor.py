@@ -1,9 +1,82 @@
 class myprocessor:
-    def onefilefast(infile_name):
+    def processevent(ADCarr,Channelarr,numtpcs=2,numplanes=3,maxwires=240,minwvfm=2128,ASDlength=1065,SampleSpacing=0.5e-6):
+        import numpy as np
+        import awkward as ak
+        #from scipy.stats import kurtosis
+        import matplotlib.pyplot as plt
+        #We sort the waveforms by TPC/Plane so that we can find the correlation coefficients of all of them
+        SortedWaveforms = np.zeros((numtpcs,numplanes,maxwires,minwvfm), dtype=int)
+        returnASD = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
+        returnPSD = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
+        returnFFT = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=np.complex_)
+        returnNoSkips = np.zeros((numtpcs,numplanes,maxwires),dtype=np.uint64)
+        returnCorr = np.zeros((numtpcs,numplanes,maxwires,maxwires),dtype=float)
+        #prekurtosis = 0
+        #postkurtosis = 0
+        #postmaskstd = 0
+        #premaskstd = 0
+        #cutouts = 0
+        for nChannel in range(len(ADCarr)):
+            if(abs(np.sum(ADCarr[nChannel])>10)):
+                unmaskedWVFM = np.array(ak.to_numpy(ADCarr[nChannel]))
+                #plotchan = np.array(ak.to_numpy(ADCarr[nChannel]))
+                CurrentChannel = Channelarr[nChannel]
+                CurrentWVFM = unmaskedWVFM[0:minwvfm]
+
+                #prekurtosis += kurtosis(CurrentWVFM)
+                #premaskstd += np.std(CurrentWVFM)
+                #Mask out the clock signals and other triggers
+                CurrentWVFM, tempcutouts = myprocessor.mask_fast(CurrentWVFM)
+                #cutouts += tempcutouts
+                #Get TPC/Plane/Channel
+                TPCNum, PlaneNum, ChannelNum = myprocessor.sort_single_data(CurrentChannel)
+                #Sort our current waveform
+                SortedWaveforms[TPCNum][PlaneNum][ChannelNum] = CurrentWVFM              
+                #Get ASD/PSD/FFT
+                ADCASD, ADCPSD, ADCFFT = myprocessor.get_single_ASDPSDFFT(CurrentWVFM, SampleSpacing)
+
+                #postkurtosis += kurtosis(CurrentWVFM)
+                #postmaskstd += np.std(CurrentWVFM)
+                #Input our current ASD/PSD/FFT where it belongs
+                returnASD[TPCNum][PlaneNum][ChannelNum] += ADCASD
+                returnPSD[TPCNum][PlaneNum][ChannelNum] += ADCPSD
+                returnFFT[TPCNum][PlaneNum][ChannelNum] += np.complex64(ADCFFT)
+                #We keep track of how many events contributed to each channel sum so that we can average correctly later
+                returnNoSkips[TPCNum][PlaneNum][ChannelNum] += 1
+                """if(tempcutouts > 300):
+                    fig,ax = plt.subplots(2,2)
+                    plotchan = plotchan[0:minwvfm]
+                    ax[1][0].hist(CurrentWVFM, bins=30)
+                    ax[0][0].hist(plotchan, bins=30)
+                    ax[1][0].set_title("Post-mask Kurtosis: " + str(kurtosis(CurrentWVFM)))
+                    ax[0][0].set_title("Pre-mask Kurtosis: " + str(kurtosis(plotchan)))
+                    ax[0][1].plot(plotchan)
+                    ax[1][1].plot(CurrentWVFM)
+                    ax[1][1].set_title("Masked Waveform")
+                    ax[0][1].set_title("Unmasked Waveform")
+                    plt.suptitle("Number of Cutouts: "+str(tempcutouts))
+                    plt.show()"""
+        MegaSortedWaveforms = SortedWaveforms[0][0]
+        for tpc in range(numtpcs):
+            for plane in range(numplanes):
+                #Now we can find the correlation coefficients of each wire plane
+                returnCorr[tpc][plane] += np.corrcoef(SortedWaveforms[tpc][plane])
+                if(not((tpc==0)&(plane==0))):
+                    MegaSortedWaveforms = np.concatenate((MegaSortedWaveforms, SortedWaveforms[tpc][plane]))
+        returnMegaCorr = np.corrcoef(MegaSortedWaveforms)
+        corrbandpass = myprocessor.getcorrelationsbyfrequency(MegaSortedWaveforms)
+        #print("Pre-mask Kurtosis: " + str(prekurtosis/total_channels))
+        #print("Post-mask Kurtosis: " + str(postkurtosis/total_channels))
+        #print("Pre-mask STD: " + str(premaskstd/total_channels))
+        #print("Post-mask STD: " + str(postmaskstd/total_channels))
+        #print("Number of points cut: " + str(cutouts/total_channels))
+        return returnASD, returnPSD, returnFFT, returnCorr, returnNoSkips, returnMegaCorr, corrbandpass
+    def onefilefast(infile_name, numcores):
         import uproot
         import awkward as ak
         import numpy as np
         import time
+        from concurrent.futures import ProcessPoolExecutor
         
         starttime = time.time()
         numtpcs = 2
@@ -13,6 +86,8 @@ class myprocessor:
         minwvfm = 2128
         ASDlength = 1065 #the length of the ASD of the minwvfm
         SampleSpacing = 0.5e-6 #0.5 microseconds per tick
+        numfreqbins=15
+        exe = ProcessPoolExecutor(numcores)
         
         infile = uproot.open(infile_name)
         printname = infile_name[44:60]
@@ -36,67 +111,46 @@ class myprocessor:
                 counter.append(index)
 
         #Data to return
-        returnASD = np.empty((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
-        returnPSD = np.empty((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
-        returnFFT = np.empty((numtpcs,numplanes,maxwires,ASDlength),dtype=np.complex64)
-        returnNoSkips = np.empty((numtpcs,numplanes,maxwires),dtype=np.uint16)
-        returnCorr = np.empty((numtpcs,numplanes,maxwires,maxwires),dtype=float)
+        returnASD = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=np.float128)
+        returnPSD = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=np.float128)
+        returnFFT = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=np.complex128)
+        returnNoSkips = np.zeros((numtpcs,numplanes,maxwires),dtype=np.uint64)
+        returnCorr = np.zeros((numtpcs,numplanes,maxwires,maxwires),dtype=np.float128)
+        returnMegaCorr = np.zeros((6*maxwires, 6*maxwires), dtype=float)
+        returnCorrBand = np.zeros((numfreqbins,6*maxwires,6*maxwires),dtype=float)
         TotalEvents = len(counter)
         
         print("BEGAN PROCESSING: " + printname + " CONTAINING "+ str(TotalEvents) + " EVENTS")
         #We iterate through the events and the channels, inspecting and processing one waveform at a time
-        for nEvent in range(len(counter)):
-            #We sort the waveforms by TPC/Plane so that we can find the correlation coefficients of all of them
-            SortedWaveforms = np.empty((numtpcs,numplanes,maxwires,minwvfm), dtype=int)
-            if(nEvent == int(len(counter)/2)):
-                midtime = time.time()
-                timeelapsed = midtime-starttime
-                print("HALFWAY DONE PROCESSING " + printname + "AT " + str(int(timeelapsed/60))+":"+str(int(timeelapsed%60)))
-            for nChannel in range(len(ADCarr[counter[0]])):
-                if(abs(np.sum(ADCarr[counter[nEvent]][nChannel])>10)):
-                    CurrentWVFM = ak.to_numpy(ADCarr[counter[nEvent]][nChannel])
-                    CurrentChannel = Channelarr[counter[nEvent]][nChannel]
-                    CurrentWVFM = CurrentWVFM[0:minwvfm]
-
-                    #Mask out the clock signals and other triggers
-                    CurrentWVFM = myprocessor.mask_fast(CurrentWVFM)
-                    #Get TPC/Plane/Channel
-                    TPCNum, PlaneNum, ChannelNum = myprocessor.sort_single_data(CurrentChannel)
-                    #Sort our current waveform
-                    SortedWaveforms[TPCNum][PlaneNum][ChannelNum] = CurrentWVFM
-                    #Get ASD/PSD/FFT
-                    ADCASD, ADCPSD, ADCFFT = myprocessor.get_single_ASDPSDFFT(CurrentWVFM, SampleSpacing)
-                    
-                    #Input our current ASD/PSD/FFT where it belongs
-                    returnASD[TPCNum][PlaneNum][ChannelNum] += ADCASD
-                    returnPSD[TPCNum][PlaneNum][ChannelNum] += ADCPSD
-                    returnFFT[TPCNum][PlaneNum][ChannelNum] += np.complex64(ADCFFT)
-                    #We keep track of how many events contributed to each channel sum so that we can average correctly later
-                    returnNoSkips[TPCNum][PlaneNum][ChannelNum] += 1
-            for tpc in range(numtpcs):
-                for plane in range(numplanes):
-                    #Now we can find the correlation coefficients of each wire plane
-                    returnCorr[tpc][plane] += np.corrcoef(SortedWaveforms[tpc][plane])
+        
+        for tempASD, tempPSD, tempFFT, tempCorr, tempNoSkips, tempMegaCorr, tempCorrBand in exe.map(myprocessor.processevent, ADCarr, Channelarr):
+            returnASD += tempASD
+            returnPSD += tempPSD
+            returnFFT += tempFFT
+            returnCorr += tempCorr
+            returnNoSkips += tempNoSkips
+            returnMegaCorr += tempMegaCorr
+            returnCorrBand += tempCorrBand
+        
         endtime = time.time()
         timeelapsed = endtime-starttime
         print("DONE PROCESSING " + printname + " IN " + str(int(timeelapsed/60))+":"+str(int(timeelapsed%60)))
-        return returnASD, TotalEvents, returnNoSkips, returnPSD, returnCorr, returnFFT
+        return returnASD, TotalEvents, returnNoSkips, returnPSD, returnCorr, returnFFT, returnMegaCorr, returnCorrBand
     
-    def onefileresilient(filename):
+    def onefileresilient(filename,numcores):
         import sys, time
         import numpy as np
         starttime=time.time()
-        
         #We "try" so that if the file crashes the rest of the system keeps going
         try:
-            tempASDs, tempEvents, tempNoSkips, tempPSDs, tempCorr, tempFFT = myprocessor.onefilefast(filename)
-            return tempASDs, tempEvents, tempNoSkips, tempPSDs, tempCorr, tempFFT
+            tempASDs, tempEvents, tempNoSkips, tempPSDs, tempCorr, tempFFT, tempMegaCorr, tempCorrBand = myprocessor.onefilefast(filename,numcores)
+            return tempASDs, tempEvents, tempNoSkips, tempPSDs, tempCorr, tempFFT, tempMegaCorr, tempCorrBand
         except Exception as e:
             #We log the crash + return empty datasets
             crash=["Error on line {}".format(sys.exc_info()[-1].tb_lineno),"\n",e]
             print(crash)
             timeX=str(time.time()-starttime)
-            with open('/dune/app/users/poshung/multirun/CRASH-'+timeX+'.txt', "w") as crashlog:
+            with open('/dune/app/users/poshung/multirun/crashfiles/CRASH-'+timeX+'.txt', "w") as crashlog:
                 mytime = time.gmtime(time.time())
                 crashlog.write("Crash Occurred On: " +str(mytime[1])+"/"+str(mytime[2])+"/"+str(mytime[0])+" At " + str(mytime[3])+":"+str(mytime[4])+":"+str(mytime[5]))
                 crashlog.write("Crash Occurred While Processing: " + filename[44:60])
@@ -106,18 +160,20 @@ class myprocessor:
             numtpcs = 2
             numplanes = 3
             maxwires = 240
+            numfreqbins = 15
             ASDlength = 1065 #the length of the ASD of the minwvfm
-            returnASD = np.empty((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
-            returnPSD = np.empty((numtpcs,numplanes,maxwires,ASDlength),dtype=float)
-            returnFFT = np.empty((numtpcs,numplanes,maxwires,ASDlength),dtype=np.complex64)
-            returnNoSkips = np.empty((numtpcs,numplanes,maxwires),dtype=np.uint16)
-            returnCorr = np.empty((numtpcs,numplanes,maxwires,maxwires),dtype=float)
+            returnASD = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=np.float128)
+            returnPSD = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=np.float128)
+            returnFFT = np.zeros((numtpcs,numplanes,maxwires,ASDlength),dtype=np.complex128)
+            returnNoSkips = np.zeros((numtpcs,numplanes,maxwires),dtype=np.uint64)
+            returnCorr = np.zeros((numtpcs,numplanes,maxwires,maxwires),dtype=np.float128)
+            returnMegaCorr = np.zeros((6*maxwires, 6*maxwires), dtype=float)
+            returnCorrBand = np.zeros((numfreqbins, 6*maxwires, 6*maxwires), dtype=float)
             TotalEvents = 0
-            return returnASD, TotalEvents, returnNoSkips, returnPSD, returnCorr, returnFFT
+            return returnASD, TotalEvents, returnNoSkips, returnPSD, returnCorr, returnFFT, returnMegaCorr, returnCorrBand
         
     def multiprocess(filenames,numfiles,NumProcessors):
         import numpy as np
-        from concurrent.futures import ProcessPoolExecutor
         #Everything is essentially hard coded for 2 tpcs, 3 planes per tpc, a maximum of 240 wires per plane, and a minimum waveform length of 2128
         #If you need to adjust these values (except the waveform length) you will have to write your own sortdata() function
         #Also, you will have to write your own getADC() function based on your file structure
@@ -125,32 +181,39 @@ class myprocessor:
         numplanes = 3
         maxwires = 240
         minwvfm = 2128
+        numfreqbins=15
         ASDlength = 1065 #the length of the ASD of the minwvfm
         SampleSpacing = 0.5e-6 #0.5 microseconds per tick
-        exe = ProcessPoolExecutor(NumProcessors)
 
         TotalEvents = 0
-        ASDarray = np.empty((numtpcs,numplanes,maxwires,ASDlength), dtype=float)
-        PSDarray = np.empty((numtpcs,numplanes,maxwires,ASDlength), dtype=float)
-        FFTarray = np.empty((numtpcs,numplanes,maxwires,ASDlength), dtype=np.complex_)
-        noskips = np.empty((numtpcs,numplanes,maxwires), dtype=int)
-        rCorr = np.empty((numtpcs,numplanes,maxwires,maxwires), dtype=float)
+        ASDarray = np.zeros((numtpcs,numplanes,maxwires,ASDlength), dtype=np.float128)
+        PSDarray = np.zeros((numtpcs,numplanes,maxwires,ASDlength), dtype=np.float128)
+        FFTarray = np.zeros((numtpcs,numplanes,maxwires,ASDlength), dtype=np.complex128)
+        noskips = np.zeros((numtpcs,numplanes,maxwires), dtype=np.uint64)
+        rCorr = np.zeros((numtpcs,numplanes,maxwires,maxwires), dtype=np.float128)
+        MegaCorr = np.zeros((6*maxwires, 6*maxwires), dtype=float)
+        CorrBand = np.zeros((numfreqbins, 6*maxwires, 6*maxwires), dtype=float)
 
-        filenames=filenames[0:numfiles]
+
+        filenames=filenames[1:1+numfiles]
         
         #This is the step that actually runs the processes
-        for tempASDs, tempEvents, tempNoSkips, tempPSDs, tempCorr, tempFFT in exe.map(myprocessor.onefileresilient, filenames):
+        for fileindex in range(len(filenames)):
+            tempASDs, tempEvents, tempNoSkips, tempPSDs, tempCorr, tempFFT, tempMegaCorr, tempCorrBand = myprocessor.onefileresilient(filenames[fileindex],NumProcessors)
             TotalEvents += tempEvents
             ASDarray += tempASDs
             PSDarray += tempPSDs
             noskips += tempNoSkips
             rCorr += tempCorr
             FFTarray += tempFFT
+            MegaCorr += tempMegaCorr
+            CorrBand += tempCorrBand
             print("Events Processed: "+str(TotalEvents))
             
         #We square the correlations because we have to divide by noskips twice because this data is saved along two axes
         rCorr = np.square(rCorr)
-                
+        MegaCorr = MegaCorr/TotalEvents
+        CorrBand = CorrBand/TotalEvents
         print("BEGINNING FINAL STEP")
         for tpc in range(numtpcs): #This is the averaging out I was talking about
             for plane in range(numplanes):
@@ -161,8 +224,78 @@ class myprocessor:
                         FFTarray[tpc][plane][nChannel] = FFTarray[tpc][plane][nChannel]/noskips[tpc][plane][nChannel]
                         rCorr[tpc][plane][nChannel] = rCorr[tpc][plane][nChannel]/noskips[tpc][plane][nChannel]
                         rCorr[tpc][plane][:maxwires][nChannel] = rCorr[tpc][plane][:maxwires][nChannel]/noskips[tpc][plane][nChannel] #Have to average along both axes!
-        return ASDarray, TotalEvents, noskips, PSDarray, rCorr, FFTarray
+        return ASDarray, TotalEvents, noskips, PSDarray, rCorr, FFTarray, MegaCorr, CorrBand
     
+    #This needs to apply band pass filters to each waveforms in the 1440x2128 array, then find the correlation matrix of each frequency range
+    #This is the finickiest program I've ever tried to work on
+    def getcorrelationsbyfrequency(MegaSortedWaveforms, maxfreq=1e6, samplefreq=2e6, numbins=15, order=7):
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from scipy.signal import lfilter,butter,bessel,cheby1,filtfilt
+
+        freqstep=maxfreq/numbins
+        freqrange = np.arange(0,maxfreq,freqstep)
+        returnarray = np.zeros((numbins,len(MegaSortedWaveforms),len(MegaSortedWaveforms)), dtype=float)
+        
+        for Windex in range(len(MegaSortedWaveforms)):
+            subtractmed=np.median(MegaSortedWaveforms[Windex])
+            MegaSortedWaveforms[Windex]=MegaSortedWaveforms[Windex]-subtractmed
+        
+        tempWaveforms = np.zeros((len(MegaSortedWaveforms),len(MegaSortedWaveforms[0])), dtype=int)
+        for Windex in range(len(MegaSortedWaveforms)):
+            b,a = butter(order,freqrange[1],fs=samplefreq,btype='lowpass')
+            tempWaveforms[Windex]=filtfilt(b,a,MegaSortedWaveforms[Windex])
+            """if((Windex==0)):
+                ADCASD, ADCPSD, ADCFFT = myprocessor.get_single_ASDPSDFFT(tempWaveforms[Windex], samplefreq)
+                fig,ax = plt.subplots(2)
+                ax[0].plot(tempWaveforms[Windex])
+                ax[0].set_title("Filtered Waveform")
+                ax[1].plot(ADCPSD)
+                ax[1].set_yscale('log')
+                ax[1].set_title("Filtered PSD")
+                plt.suptitle("Freq Band: " + str(freqstep*0/1e6)+"[1e6 Hz]")
+                plt.show()"""
+        returnarray[0] = np.corrcoef(tempWaveforms)
+        
+        for Findex in range(1,len(freqrange)-1):
+            tempWaveforms = np.zeros((len(MegaSortedWaveforms),len(MegaSortedWaveforms[0])), dtype=int)
+            for Windex in range(len(MegaSortedWaveforms)):
+                tempWaveforms[Windex] = myprocessor.butter_bandpass_filter(MegaSortedWaveforms[Windex],freqrange[Findex],freqrange[Findex+1],samplefreq,order)
+                """if((Windex==0)):
+                    ADCASD, ADCPSD, ADCFFT = myprocessor.get_single_ASDPSDFFT(tempWaveforms[Windex], samplefreq)
+                    fig,ax = plt.subplots(2)
+                    ax[0].plot(tempWaveforms[Windex])
+                    ax[0].set_title("Filtered Waveform")
+                    ax[1].plot(ADCPSD)
+                    ax[1].set_yscale('log')
+                    ax[1].set_title("Filtered PSD")
+                    plt.suptitle("Freq Band: " + str(freqstep*Findex/1e6)+"[1e6 Hz]")
+                    plt.show()"""
+            returnarray[Findex] = np.corrcoef(tempWaveforms)
+            
+        tempWaveforms = np.zeros((len(MegaSortedWaveforms),len(MegaSortedWaveforms[0])), dtype=int)
+        for Windex in range(len(MegaSortedWaveforms)):
+            b,a = butter(order,freqrange[len(freqrange)-1],fs=samplefreq,btype='highpass')
+            tempWaveforms[Windex]=filtfilt(b,a,MegaSortedWaveforms[Windex])
+            """if((Windex==0)):
+                ADCASD, ADCPSD, ADCFFT = myprocessor.get_single_ASDPSDFFT(tempWaveforms[Windex], samplefreq)
+                fig,ax = plt.subplots(2)
+                ax[0].plot(tempWaveforms[Windex])
+                ax[0].set_title("Filtered Waveform")
+                ax[1].plot(ADCPSD)
+                ax[1].set_yscale('log')
+                ax[1].set_title("Filtered PSD")
+                plt.suptitle("Freq Band: " + str(freqstep*(numbins-1)/1e6)+"[1e6 Hz]")
+                plt.show()"""
+        returnarray[numbins-1] = np.corrcoef(tempWaveforms)
+        return returnarray
+    
+    def butter_bandpass_filter(data, lowcut, highcut, fs, order):
+        from scipy.signal import lfilter,butter,bessel,cheby1,filtfilt
+        b, a = butter(order,[lowcut, highcut], fs=fs,btype='bandpass')
+        y = filtfilt(b, a, data)
+        return y    
+        
     #this is the recursive method to return the noise-free mean and std of a waveform
     def recursive_stats(data_arr):
         import numpy as np
@@ -195,16 +328,37 @@ class myprocessor:
         #Get the peaks
         peaks = np.where(abs(CurrentWVFM-noisemean)>6*noisestd)[0]
         #Then from every peak we trace backward/forward to cut out the whole signal
+        cutout = 0
+        cutindexes = []
+        localmeans = []
         for wvfmindex in peaks:
             i = wvfmindex
-            while((abs(CurrentWVFM[i]-noisemean)>2*noisestd)&(i>=0)):
+            while((abs(CurrentWVFM[i]-noisemean)>1*noisestd)&(i>=0)):
                 CurrentWVFM[i] = noisemean
+                cutindexes.append(i)
                 i-=1
-            i=wvfmindex
-            while((abs(CurrentWVFM[i]-noisemean)>2*noisestd)&(i<2128)):
-                CurrentWVFM[i] = noisemean
-                i+=1
-        return CurrentWVFM
+                cutout += 1
+            i=wvfmindex+1
+            if(i<= 2127):
+                while((abs(CurrentWVFM[i]-noisemean)>1*noisestd)):
+                    CurrentWVFM[i] = noisemean
+                    cutindexes.append(i)
+                    i+=1
+                    cutout += 1
+                    if(i==2128):
+                        break
+        for index in cutindexes:
+            if(index<30):
+                localwvfm = CurrentWVFM[0:index+30]
+            else: 
+                if(index>2097):
+                    localwvfm = CurrentWVFM[index-30:2127]
+                else:
+                    localwvfm = CurrentWVFM[index-30:index+30]
+            localmeans.append(np.mean(localwvfm))
+        for i in range(len(cutindexes)):
+            CurrentWVFM[cutindexes[i]] = localmeans[i]
+        return CurrentWVFM, cutout
     def sort_single_data(currentchannel):
         #Gets the tpc/plane/channel from a channel number
         channelnum = currentchannel
@@ -254,8 +408,8 @@ class myprocessor:
              
         #For plot of ASDs
         fig,ax = plt.subplots(numtpcs,numplanes,num=1)
-        fig.set_figheight(10)
-        fig.set_figwidth(15)
+        fig.set_figheight(numtpcs*5)
+        fig.set_figwidth(numplanes*5)
         
         colorvalues = mpl.cm.viridis(range(maxwires))
         divider = make_axes_locatable(plt.gca())
@@ -312,8 +466,8 @@ class myprocessor:
              
         #For plot of ASDs
         fig,ax = plt.subplots(numtpcs,numplanes,num=1)
-        fig.set_figheight(5*numplanes)
-        fig.set_figwidth(5*numtpcs)
+        fig.set_figheight(5*numtpcs)
+        fig.set_figwidth(5*numplanes)
         
         colorvalues = mpl.cm.viridis(range(maxwires))
         divider = make_axes_locatable(plt.gca())
@@ -325,7 +479,7 @@ class myprocessor:
         fig2,ax2 = plt.subplots(numtpcs,numplanes,num=2)
         fig2.set_figheight(numtpcs*5)
         fig2.set_figwidth(numplanes*5)
-        
+
         planenames = ["u", "v", "z"]
         
         AvgASD = data_arr
@@ -347,6 +501,9 @@ class myprocessor:
                 cmap = mpl.cm.get_cmap('viridis')
                 cmap.set_under('white')
                 ax2[tpc][plane].pcolormesh(freq,range(maxwires),np.log(AvgASD[tpc][plane]),cmap = cmap,shading='gouraud')
+                fig2.colorbar(ax2[tpc][plane].pcolormesh(freq,range(maxwires),np.log(AvgASD[tpc][plane]),cmap = cmap,shading='gouraud'))
+                if(plane!=2):
+                    ax2[tpc][plane].set_ylim(0,200)
                 
                 #For ASD Plot
                 for nChannel in range(len(AvgASD[tpc][plane])):
@@ -366,16 +523,109 @@ class myprocessor:
         import matplotlib.pyplot as plt
         import numpy as np
         fig,ax = plt.subplots(numtpcs,numplanes,num=1)
-        fig.set_figheight(10*numplanes)
-        fig.set_figwidth(10*numtpcs)
-        fig.set_size_inches(18, 12)
+        fig.set_figheight(10*numtpcs)
+        fig.set_figwidth(10*numplanes)
+        fig.suptitle("Noise Waveform Correlations", y=0.93, size=15)
+        fig.set_size_inches(15, 10)
         planenames = ["u", "v", "z"]
 
         for TPCnum in range(numtpcs):
             for PlaneNum in range(numplanes):
+                if(PlaneNum != 2):
+                    ax[TPCnum][PlaneNum].set_ylim(0,200)
+                    ax[TPCnum][PlaneNum].set_xlim(0,200)
                 rCoeff = rCorr[TPCnum][PlaneNum]
                 ax[TPCnum][PlaneNum].set_xlabel("Channels 0-240")
                 ax[TPCnum][PlaneNum].set_ylabel("Channels 0-240")
-                ax[TPCnum][PlaneNum].set_title("Correlations Between Channels for TPC #" + str(TPCnum) +" Wire Plane " + planenames[PlaneNum])
-                fig.colorbar(ax[TPCnum][PlaneNum].pcolor(rCoeff))
+                ax[TPCnum][PlaneNum].set_title("TPC #" + str(TPCnum) +" Plane " + planenames[PlaneNum])
+                fig.colorbar(ax[TPCnum][PlaneNum].pcolormesh(rCoeff))
                 ax[TPCnum][PlaneNum].pcolormesh(np.arange(240),np.arange(240),rCoeff,shading='gouraud')
+        plt.show()
+    def plotmegacorr(MegaCorr):
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        HalfFixedMegaCorr = np.zeros((1280,1440),dtype=float)
+        FixedMegaCorr = np.zeros((1280,1280),dtype=float)
+        HalfFixedMegaCorr[0:200] = MegaCorr[0:200]
+        HalfFixedMegaCorr[200:400] = MegaCorr[240:440]
+        HalfFixedMegaCorr[400:640] = MegaCorr[480:720]
+        HalfFixedMegaCorr[640:840] = MegaCorr[720:920]
+        HalfFixedMegaCorr[840:1040] = MegaCorr[960:1160]
+        HalfFixedMegaCorr[1040:1280] = MegaCorr[1200:1440]
+        for i in range(1280):
+            FixedMegaCorr[i][0:200] = HalfFixedMegaCorr[i][0:200]
+            FixedMegaCorr[i][200:400] = HalfFixedMegaCorr[i][240:440]
+            FixedMegaCorr[i][400:640] = HalfFixedMegaCorr[i][480:720]
+            FixedMegaCorr[i][640:840] = HalfFixedMegaCorr[i][720:920]
+            FixedMegaCorr[i][840:1040] = HalfFixedMegaCorr[i][960:1160]
+            FixedMegaCorr[i][1040:1280] = HalfFixedMegaCorr[i][1200:1440]
+            
+        lines = [200,400,640,840,1040,1280]
+        linenames = ['200','400','640','840','1040','1280']
+        ticks = [40,80,120,160,200,240,280,320,360,400,448,496,544,592,640,680,720,760,800,840,880,920,960,1000,1040,1088,1136,1184,1232,1280]
+        planeindexes = [100,300,520,740,940,1160]
+        planenames = ['u0','v0','z0','u1','v1','z1']
+        plt.figure(figsize=(15,12))
+        plt.title('Noise Waveform Correlations',fontsize=18)
+        plt.colorbar(plt.pcolormesh(FixedMegaCorr))
+        plt.vlines(ticks,0,1280,linestyles='dashed',colors='white')
+        plt.hlines(ticks,0,1280,linestyles='dashed',colors='white')
+        plt.vlines(lines,0,1280, colors="orange")
+        plt.hlines(lines,0,1280, colors="orange")
+        plt.xticks(lines,linenames,minor=True,fontsize=8)
+        plt.yticks(lines,linenames,minor=True,fontsize=8)
+        plt.xticks(planeindexes,planenames,minor=False,fontsize=12)
+        plt.yticks(planeindexes,planenames,minor=False,fontsize=12)
+        plt.ylabel('Channels 0-1280',fontsize=15)
+        plt.xlabel('Channels 0-1280',fontsize=15)
+        plt.pcolormesh(np.arange(1280),np.arange(1280),FixedMegaCorr,shading='gouraud')
+        plt.show()
+        
+    def plotmegacorrbyband(corrarray):
+        import matplotlib.pyplot as plt
+        import numpy as np
+        lines = [200,400,640,840,1040,1280]
+        linenames = ['200','400','640','840','1040','1280']
+        ticks = [40,80,120,160,200,240,280,320,360,400,448,496,544,592,640,680,720,760,800,840,880,920,960,1000,1040,1088,1136,1184,1232,1280]
+        planeindexes = [100,300,520,740,940,1160]
+        planenames = ['u0','v0','z0','u1','v1','z1']
+        numbins = len(corrarray)
+        maxfreq=1e6
+        freqstep=maxfreq/numbins
+        freqrange=np.arange(0,maxfreq,freqstep)
+        freqrange=np.append(freqrange,maxfreq)
+        fig,ax = plt.subplots(len(corrarray),figsize=(15,96))
+        for freqband in range(len(corrarray)):
+            MegaCorr = corrarray[freqband]
+            HalfFixedMegaCorr = np.zeros((1280,1440),dtype=float)
+            FixedMegaCorr = np.zeros((1280,1280),dtype=float)
+            HalfFixedMegaCorr[0:200] = MegaCorr[0:200]
+            HalfFixedMegaCorr[200:400] = MegaCorr[240:440]
+            HalfFixedMegaCorr[400:640] = MegaCorr[480:720]
+            HalfFixedMegaCorr[640:840] = MegaCorr[720:920]
+            HalfFixedMegaCorr[840:1040] = MegaCorr[960:1160]
+            HalfFixedMegaCorr[1040:1280] = MegaCorr[1200:1440]
+            for i in range(1280):
+                FixedMegaCorr[i][0:200] = HalfFixedMegaCorr[i][0:200]
+                FixedMegaCorr[i][200:400] = HalfFixedMegaCorr[i][240:440]
+                FixedMegaCorr[i][400:640] = HalfFixedMegaCorr[i][480:720]
+                FixedMegaCorr[i][640:840] = HalfFixedMegaCorr[i][720:920]
+                FixedMegaCorr[i][840:1040] = HalfFixedMegaCorr[i][960:1160]
+                FixedMegaCorr[i][1040:1280] = HalfFixedMegaCorr[i][1200:1440]
+                
+            
+            ax[freqband].set_title(('Noise Waveform Correlations for the ' + str(freqrange[freqband]/1e6)+ '[1e6 Hz] to ' + str(freqrange[freqband+1]/1e6)+'[1e6Hz] Band'),fontsize=18)
+            fig.colorbar(ax[freqband].pcolormesh(FixedMegaCorr))
+            ax[freqband].vlines(ticks,0,1280,linestyles='dashed',colors='white')
+            ax[freqband].hlines(ticks,0,1280,linestyles='dashed',colors='white')
+            ax[freqband].vlines(lines,0,1280, colors="orange")
+            ax[freqband].hlines(lines,0,1280, colors="orange")
+            ax[freqband].set_xticks(lines,linenames,minor=True,fontsize=8)
+            ax[freqband].set_yticks(lines,linenames,minor=True,fontsize=8)
+            ax[freqband].set_xticks(planeindexes,planenames,minor=False,fontsize=12)
+            ax[freqband].set_yticks(planeindexes,planenames,minor=False,fontsize=12)
+            ax[freqband].set_ylabel('Channels 0-1280',fontsize=15)
+            ax[freqband].set_xlabel('Channels 0-1280',fontsize=15)
+            ax[freqband].pcolormesh(np.arange(1280),np.arange(1280),FixedMegaCorr,shading='gouraud')
+        plt.show()
