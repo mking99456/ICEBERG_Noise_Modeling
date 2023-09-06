@@ -1,6 +1,20 @@
 #Read in an npz file containing the power spectra for channels in the ICEBERG TPC
 #Return waveforms simulated using an MC method
 
+#To simulate one waveform: getNoiseWaveform(PSD) where PSD is the noise 
+#To simulate an event: simulateEvent(npz_file) where npz_file contains the noise model PSD
+
+#The noise simulation code follows M. Carrettoni and O. Cremonesi, "Generation of Noise Time Series with arbitrary Power Spectrum" and works as follows:
+#1. Start with our noise model in the form of a power spectrum. (P(0) = 0)
+#2. Divide out the normalization (alpha) used for the power spectrum.
+#3. Let F(w) = the square root of the unnormalized power spectrum times uniformly generated random phases.
+#4. Let f(t) be the inverse real fast fourier transform of F
+#5. Let l be a tunable overlap rate of signals. I have it tuned to allow for 50-100 copies of the signal waveform to be added to itself.
+#6. Generate time delays according to a Poisson distribution. Stop generating when the total delayed time is greater than the domain of f(t), T (Length in time of a waveform).
+#7. Generate random amplitudes a_k from Norm(0,1/(l*T))
+#8. Our noise waveform is n(t) = sum_k a_k*f(t-t_k)
+
+
 class simulate_noise:
 
     #Input the name of the npz file that contains the PSD information
@@ -85,3 +99,14 @@ class simulate_noise:
                         New_PSD[iTPC][iPlane][iChannel] = ADCPSD
 
         return New_Waveform, New_PSD
+    
+    def simulateMultipleEvents(npz_file, n, savefile, numtpcs = 2, numplanes = 3, maxwires = 240, time_indices = 2128, SampleSpacing = 0.5*10**(-6)):
+        import numpy as np
+        Waveform_Array = np.zeros(n)
+        PSD_Array = np.zeros(n)
+
+        for i in range(n):
+            Waveform_Array[i], PSD_Array[i] = simulateEvent(npz_file,numtpcs = 2, numplanes = 3, maxwires = 240, time_indices = 2128, SampleSpacing = 0.5*10**(-6))
+        
+        np.savez(savefile,Waveform_Array,PSD_Array)
+        return Waveform_Array,PSD_Array
