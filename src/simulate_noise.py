@@ -108,7 +108,7 @@ class simulate_noise:
 
         return New_Waveform, New_PSD
     
-    def simulateMultipleEvents(npz_file, savefile, nEvents, easy_sim = False,add_correlations=false):
+    def simulateMultipleEvents(npz_file, savefile, nEvents, easy_sim = False,add_correlations=False):
         import numpy as np
         Waveform_Array = np.zeros((nEvents,simulate_noise.numchannels,simulate_noise.minwvfm),dtype=float)
         PSD_Array = np.zeros((nEvents,simulate_noise.numchannels,simulate_noise.PSD_length),dtype=float)

@@ -3,6 +3,8 @@
 
 class myprocessor:
     #Contains Methods:
+    #   ###make this one### combineNoiseModel
+    #   updateNoiseModel
     #   createNoiseModel(filenames,savefile,numcores = 1):
     #   multiprocess(filenames,numcores = 1)
     #   onefileresilient(filename,numcores = 1,errorpath='./'):
@@ -12,7 +14,7 @@ class myprocessor:
     #   butter_bandpass_filter(data, lowcut, highcut, fs, order)
     #   recursive_stats(data_arr)
     #   mask_fast(CurrentWVFM)
-    #   get_single_PSD(waveform, SampleSpacing)
+    #   get_single_PSD(waveform)
 
     #Global Field Variables used in every method of this class:
     numchannels = 200*4 + 240*2 #Number of wires in the TPC
@@ -22,6 +24,8 @@ class myprocessor:
     numfreqbins = 10 #Dividing up our correlation plots into different frequency bins.
 
     #updateNoiseModel
+    #I want to build in an option to combine noise models
+
     def updateNoiseModel(filenames,oldSavefile,newSavefile,numcores = 1):
         import numpy as np
         myarray = np.load(oldSavefile)
@@ -103,7 +107,7 @@ class myprocessor:
         
         #This is the step that actually runs the processes
         for fileindex in range(len(filenames)):
-            tempPSD, tempCorr,tempCorrBand, tempBothLive, tempKurt, tempEvents = myprocessor.onefileresilient(filenames[fileindex],numcores = numcores,data = data)
+            tempPSD, tempCorr,tempCorrBand, tempBothLive, tempKurt, tempEvents = myprocessor.onefileresilient(filenames[fileindex],numcores = numcores)
             PSD += tempPSD
             BothLive += tempBothLive
             rCorr += tempCorr
@@ -280,7 +284,6 @@ class myprocessor:
         import numpy as np
         import awkward as ak
         from scipy.stats import kurtosis
-        import matplotlib.pyplot as plt
 
         #We sort the waveforms by TPC/Plane so that we can find the correlation coefficients of all of them
         Waveforms = np.zeros((myprocessor.numchannels,myprocessor.minwvfm),dtype=float)
@@ -314,7 +317,7 @@ class myprocessor:
             #SortedWaveforms[TPCNum][PlaneNum][ChannelNum] = CurrentWVFM   
 
             #Get ASD/PSD/FFT
-            ADCPSD = myprocessor.get_single_PSD(CurrentWVFM, myprocessor.SampleSpacing)
+            ADCPSD = myprocessor.get_single_PSD(CurrentWVFM)
 
             #Input our current ASD/PSD/FFT where it belongs
             returnPSD[GlobalChannel] += ADCPSD
@@ -377,7 +380,6 @@ class myprocessor:
     #processMCevent
     def processMCevent(Waveforms):
         import numpy as np
-        import matplotlib.pyplot as plt
 
         #We sort the waveforms by TPC/Plane so that we can find the correlation coefficients of all of them
         returnPSD = np.zeros((myprocessor.numchannels,myprocessor.PSDlength),dtype=float)
@@ -412,7 +414,6 @@ class myprocessor:
     #
     def getcorrelationsbyfrequency(Waveforms):
         import numpy as np
-        import matplotlib.pyplot as plt
         from scipy.signal import butter,filtfilt,buttord
         
         #maxfreq is the Nyquist frequency, samplefreq is the sampling frequency, both in Hz
