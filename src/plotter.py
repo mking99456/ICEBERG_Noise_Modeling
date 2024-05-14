@@ -13,7 +13,7 @@ class plotter:
     maxwires = 240
     numchannels = 200*4 + 240*2 #Number of wires in the TPC
     minwvfm = 2128
-    SampleSpacing = 0.5e-6
+    SampleSpacing = 0.5e-6 #Seconds per time tick
     numfreqbins = 10
     
     #convert_to_sorted
@@ -112,8 +112,8 @@ class plotter:
                 #For 2D plot
                 cmap = mpl.cm.get_cmap('viridis')
                 cmap.set_under('white')
-                ax2[tpc][plane].pcolormesh(freq,range(plotter.maxwires),np.log(Sorted_PSD[tpc][plane]),cmap = cmap,shading='gouraud',vmin = -14, vmax = -5)
-                fig2.colorbar(ax2[tpc][plane].pcolormesh(freq,range(plotter.maxwires),np.log(Sorted_PSD[tpc][plane]),cmap = cmap,shading='gouraud',vmin = -14, vmax = -5))
+                ax2[tpc][plane].pcolormesh(freq,range(plotter.maxwires),np.log10(Sorted_PSD[tpc][plane]),cmap = cmap,shading='gouraud',vmin = 3.5, vmax = 4.5) #default -14,-5
+                fig2.colorbar(ax2[tpc][plane].pcolormesh(freq,range(plotter.maxwires),np.log10(Sorted_PSD[tpc][plane]),cmap = cmap,shading='gouraud',vmin = 3.5, vmax = 4.5)) #default -14,-5
                 if(plane!=2):
                     ax2[tpc][plane].set_ylim(0,200)
                 
@@ -123,13 +123,13 @@ class plotter:
                     
                 ax[tpc][plane].set_yscale("log")
                 ax[tpc][plane].set_xlabel("Freq [1e6 Hz]")
-                ax[tpc][plane].set_ylabel("Averaged PSD [1/Hz]")
-                ax[tpc][plane].set_title("Averaged Channel PSD for TPC: " + str(tpc) + " Wire Plane: " + planenames[plane])
+                ax[tpc][plane].set_ylabel("Averaged FFT [1/Hz^0.5]")
+                ax[tpc][plane].set_title("Averaged Channel FFT for TPC: " + str(tpc) + " Wire Plane: " + planenames[plane])
                 
                 ax2[tpc][plane].set_xscale("linear")
                 ax2[tpc][plane].set_xlabel("Freq [Hz]")
                 ax2[tpc][plane].set_ylabel("Channel Number")
-                ax2[tpc][plane].set_title("Averaged Channel PSD for TPC: " + str(tpc) + " Wire Plane: " + planenames[plane])
+                ax2[tpc][plane].set_title("Averaged Channel FFT for TPC: " + str(tpc) + " Wire Plane: " + planenames[plane])
         plt.show()
         fig.savefig(outputFile1, dpi = fig.dpi)
         fig2.savefig(outputFile2, dpi = fig2.dpi)
