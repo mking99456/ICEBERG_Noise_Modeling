@@ -31,13 +31,14 @@ using namespace std;
 
 
 void ICEBERG_Waveform_Creator(
-	std::string const& filename="/exp/dune/app/users/mking/dunesw_v09_82_00d00/ICEBERG_Noise_Ar_39/iceberg_noise/AR_39_sim/Ar39_50.root", 
-	//std::string const& filename = "/exp/dune/data/users/mking/mking/ICEBERG_Run5_Decoded/no_pulser_or_cosmics/iceberg_r009693_sr01_20210404T192346_1_dl1_decode.root",
+	std::string const& filename="/exp/dune/data/users/mking/ICEBERG_Noise_Ar_39/iceberg_noise/AR_39_sim/05_15_2024_2/Ar39.root", 
+	//std::string const& filename = "/exp/dune/data/users/mking/ICEBERG_Data/ICEBERG_Run5_Decoded/no_pulser_or_cosmics/iceberg_r009701_sr01_20210404T200822_1_dl1_decode.root",
     std::string const& inputtag="tpcrawdecoder:daq")
     //std::string const& inputtag="tpcrawdecoder:sig")
 {
   //Output TFile:
-  std::string const& outputfile="Waveforms_Data_6_Runs.root";
+  std::string const& outputfile="/exp/dune/data/users/mking/ICEBERG_Noise_Ar_39/iceberg_noise/AR_39_sim/05_15_2024_2/Waveforms_Sim_Corrected.root";
+  //std::string const& outputfile="/exp/dune/data/users/mking/ICEBERG_Data/Waveforms_Data_Run_9701.root";
 
   std::unique_ptr<TFile> myFile(TFile::Open(outputfile.c_str(), "RECREATE"));
   myFile->cd();
@@ -45,29 +46,50 @@ void ICEBERG_Waveform_Creator(
 
   size_t evcounter=0;
 
-  InputTag rawdigit_tag{ inputtag };
-  //vector<string> filenames(1, filename);
+  vector<string> tags = 
+  {
+	"daq",
+	"sig"
+  };
 
-cout<<"Creating the list of filenames"<<endl;
+  vector<string> inputtags;
+  for (int i = 0; i<tags.size(); i++)
+  {
+	inputtags.push_back("tpcrawdecoder:"+tags.at(i));
+  }
 
-  vector<string> filenames = {
-"iceberg_r009693_sr01_20210404T192346_1_dl1_decode.root", "iceberg_r009697_sr01_20210404T194635_1_dl1_decode.root", "iceberg_r009702_sr01_20210404T204459_1_dl1_decode.root",  "iceberg_r009706_sr01_20210404T210522_1_dl1_decode.root",  "iceberg_r009710_sr01_20210404T212534_1_dl1_decode.root"};
+  vector<InputTag> rawdigit_tags;
+for (int i = 0; i<tags.size(); i++)
+  {
+	InputTag rawdigit_tag {inputtags.at(i)};
+	rawdigit_tags.push_back(rawdigit_tag);
+  }
+
+  //InputTag rawdigit_tag{ inputtag };
+  vector<string> filenames(1, filename);
+
+//cout<<"Creating the list of filenames"<<endl;
+
+//Make a vector of filenames for the ICEBERG data
+
+  //vector<string> filenames = {
+//"iceberg_r009693_sr01_20210404T192346_1_dl1_decode.root", "iceberg_r009697_sr01_20210404T194635_1_dl1_decode.root", "iceberg_r009702_sr01_20210404T204459_1_dl1_decode.root",  "iceberg_r009706_sr01_20210404T210522_1_dl1_decode.root",  "iceberg_r009710_sr01_20210404T212534_1_dl1_decode.root"};
 //,
 //"iceberg_r009694_sr01_20210404T192925_1_dl1_decode.root",  "iceberg_r009698_sr01_20210404T195219_1_dl1_decode.root",  "iceberg_r009703_sr01_20210404T205038_1_dl1_decode.root",  "iceberg_r009707_sr01_20210404T211101_1_dl1_decode.root",  "iceberg_r009711_sr01_20210404T213002_1_dl1_decode.root",
 //"iceberg_r009695_sr01_20210404T193508_1_dl1_decode.root",  "iceberg_r009699_sr01_20210404T195808_1_dl1_decode.root",  "iceberg_r009704_sr01_20210404T205505_1_dl1_decode.root",  "iceberg_r009708_sr01_20210404T211527_1_dl1_decode.root",
 //"iceberg_r009696_sr01_20210404T194054_1_dl1_decode.root",  "iceberg_r009701_sr01_20210404T200822_1_dl1_decode.root"  ,"iceberg_r009705_sr01_20210404T205939_1_dl1_decode.root", "iceberg_r009709_sr01_20210404T212107_1_dl1_decode.root"};
 
-cout<<"Adding the path to the filenames"<<endl;
+//cout<<"Adding the path to the filenames"<<endl;
 
 //add the path to the filenames
-for (int i=0; i<5; i++)
-{
-  filenames[i] = "/exp/dune/data/users/mking/mking/ICEBERG_Run5_Decoded/no_pulser_or_cosmics/" + filenames[i];
-}
+//for (int i=0; i<5; i++)
+//{
+//  filenames[i] = "/exp/dune/data/users/mking/mking/ICEBERG_Run5_Decoded/no_pulser_or_cosmics/" + filenames[i];
+//}
 
   //TFile *myFile = new TFile(outputfile.c_str(), "RECREATE"
 
-cout<<"Filelist created"<<endl;
+//cout<<"Filelist created"<<endl;
 
 
 // loop over all the events
@@ -81,14 +103,18 @@ cout<<"Filelist created"<<endl;
 	//for debugging purposes, print the event number to screen
 	std::cout<<"Processing Run "<<runno<<" Subrun "<<subrunno<<" Event "<<eventno<<std::endl;
 
-	auto const& rawdigits = *ev.getValidHandle<vector<raw::RawDigit>>(rawdigit_tag);
+	//loop over the tags
+	for (int i = 0; i<tags.size(); i++)
+	{
+		auto const& rawdigits = *ev.getValidHandle<vector<raw::RawDigit>>(rawdigit_tags.at(i));
+
 	if (!rawdigits.empty())
 	  {
 		int numchannels = 1280;
 		int numtimeticks = 2128;
 
 		//channel on x, time on y
-		std::string histname = "run_" + std::to_string(runno) + "_sub_" + std::to_string(subrunno) + "_event_" + std::to_string(eventno) + "_daq";
+		std::string histname = "run_" + std::to_string(runno) + "_sub_" + std::to_string(subrunno) + "_event_" + std::to_string(eventno) + "_" + tags.at(i);
 		TH2F *outhist = (TH2F*) new TH2F(histname.c_str(),histname.c_str(),numchannels,0,numchannels,numtimeticks,0,numtimeticks);
 		outhist->SetDirectory(0);
 		outhist->GetXaxis()->SetTitle("Channel");
@@ -102,13 +128,15 @@ cout<<"Filelist created"<<endl;
 			size_t ic = rawdigits[ichan].Channel();
             for (size_t itick=0;itick<=thigh;++itick)
 	        	{
-			outhist->SetBinContent(ic,itick,rawdigits[ichan].ADC(itick));
+					//Add one to the indices to avoid the 0th bin, which is an underflow bin
+			outhist->SetBinContent(ic+1,itick+1,rawdigits[ichan].ADC(itick));
 		      }
 	      } // loop over channels
 		  //myFile->WriteObject(&outhist, histname.c_str());
 		  myFile->cd();
 		  outhist->Write();
       }//make sure rawdigits is not empty
+	}//loop over tags
     ++evcounter;
   }//loop over events
   std::cout<<"Done"<<std::endl;

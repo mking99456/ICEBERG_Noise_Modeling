@@ -5,6 +5,7 @@ class Analyzer:
     N = 2128 # 3400 #Minimum number of time ticks present in SBND data arrays we're analyzing.
     PSDlength = 1065 # 1701 #the length of the PSD of the minwvfm
     Seconds_Per_Timetick = 0.5e-6 #0.5 microseconds per tick
+    Path_to_Validation = '/exp/dune/data/users/mking/ICEBERG_Noise_Ar_39/iceberg_noise/Sim_Validation_04192024/'
 
 
     def LoadWaveformFile(Waveform_File_Path='Waveforms.root',returnIndex=0):
@@ -48,9 +49,9 @@ class Analyzer:
         StartingChannelIndex = 0
 
         #If in-progress file exists, read from that.
-        my_file = Path('FFTs/'+key+'_FFT_In_Progress.npz')
+        my_file = Path(Analyzer.Path_to_Validation+'FFTs/'+key+'_FFT_In_Progress.npz')
         if my_file.is_file():
-            ExistingFFTEvent = np.load('FFTs/'+key+'_FFT_In_Progress.npz')
+            ExistingFFTEvent = np.load(Analyzer.Path_to_Validation+'FFTs/'+key+'_FFT_In_Progress.npz')
             FFTEvent = ExistingFFTEvent['FFT']
             StartingChannelIndex=ExistingFFTEvent['num']
 
@@ -60,9 +61,9 @@ class Analyzer:
         for iChannel in np.arange(StartingChannelIndex,np.shape(H)[0],1):
             FFTEvent[iChannel] = Analyzer.getFFT(H[iChannel])
             if iChannel%200 == 0:
-                np.savez('FFTs/'+key+'_FFT_In_Progress.npz',FFT = FFTEvent,num=iChannel)
+                np.savez(Analyzer.Path_to_Validation+'FFTs/'+key+'_FFT_In_Progress.npz',FFT = FFTEvent,num=iChannel)
         
-        np.savez('FFTs/'+key+'_FFT_In_Progress.npz',FFT = FFTEvent,num=Analyzer.numchannels)
+        np.savez(Analyzer.Path_to_Validation+'FFTs/'+key+'_FFT_In_Progress.npz',FFT = FFTEvent,num=Analyzer.numchannels)
 
         return FFTEvent
     
@@ -70,16 +71,16 @@ class Analyzer:
         import numpy as np
         from pathlib import Path
 
-        my_file = Path('FFTs/'+key+'_FFT_In_Progress.npz')
+        my_file = Path(Analyzer.Path_to_Validation+'FFTs/'+key+'_FFT_In_Progress.npz')
         if my_file.is_file():
-            ExistingFFTEvent = np.load('FFTs/'+key+'_FFT_In_Progress.npz')
+            ExistingFFTEvent = np.load(Analyzer.Path_to_Validation+'FFTs/'+key+'_FFT_In_Progress.npz')
             FFTEvent = ExistingFFTEvent['FFT']
             StartingChannelIndex=ExistingFFTEvent['num']
             if StartingChannelIndex == Analyzer.numchannels:
                 return FFTEvent
 
         FFT = np.abs(np.fft.rfft(H))
-        np.savez('FFTs/'+key+'_FFT_In_Progress.npz',FFT = FFT,num=Analyzer.numchannels)
+        np.savez(Analyzer.Path_to_Validation+'FFTs/'+key+'_FFT_In_Progress.npz',FFT = FFT,num=Analyzer.numchannels)
         
         return FFT
 
