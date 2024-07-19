@@ -31,13 +31,14 @@ using namespace std;
 
 
 void ICEBERG_Waveform_Creator(
-	std::string const& filename="/exp/dune/data/users/mking/ICEBERG_Noise_Ar_39/iceberg_noise/AR_39_sim/05_15_2024_2/Ar39.root", 
+	//std::string const& filename="/exp/dune/data/users/mking/ICEBERG_Noise_Ar_39/iceberg_noise/AR_39_sim/05_15_2024_2/Ar39.root", 
+	std::string const& filename="/exp/dune/data/users/mking/ICEBERG_Noise_Ar_39/iceberg_noise/AR_39_sim/07_10_2024/Ar39.root", 
 	//std::string const& filename = "/exp/dune/data/users/mking/ICEBERG_Data/ICEBERG_Run5_Decoded/no_pulser_or_cosmics/iceberg_r009701_sr01_20210404T200822_1_dl1_decode.root",
     std::string const& inputtag="tpcrawdecoder:daq")
     //std::string const& inputtag="tpcrawdecoder:sig")
 {
   //Output TFile:
-  std::string const& outputfile="/exp/dune/data/users/mking/ICEBERG_Noise_Ar_39/iceberg_noise/AR_39_sim/05_15_2024_2/Waveforms_Sim_Corrected.root";
+  std::string const& outputfile="/exp/dune/data/users/mking/ICEBERG_Noise_Ar_39/iceberg_noise/AR_39_sim/07_10_2024/Waveforms_Sim.root";
   //std::string const& outputfile="/exp/dune/data/users/mking/ICEBERG_Data/Waveforms_Data_Run_9701.root";
 
   std::unique_ptr<TFile> myFile(TFile::Open(outputfile.c_str(), "RECREATE"));
@@ -135,6 +136,8 @@ for (int i = 0; i<tags.size(); i++)
 		  //myFile->WriteObject(&outhist, histname.c_str());
 		  myFile->cd();
 		  outhist->Write();
+		  // Make sure to free the memory from outhist
+		  delete outhist;
       }//make sure rawdigits is not empty
 	}//loop over tags
     ++evcounter;

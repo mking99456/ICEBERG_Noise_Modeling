@@ -132,7 +132,7 @@ class plotter:
                 #For 2D plot
                 cmap = mpl.cm.get_cmap('viridis')
                 cmap.set_under('white')
-                ax2[tpc][plane].pcolormesh(freq,range(plotter.maxwires),Sorted_PSD[tpc][plane],cmap = cmap,shading='gouraud',vmin = -1, vmax = 1) #default -1.3,3.3
+                ax2[tpc][plane].pcolormesh(freq,range(plotter.maxwires),Sorted_PSD[tpc][plane],cmap = cmap,shading='gouraud',vmin = -1, vmax = 1) #default 1.3,3.3
                 fig2.colorbar(ax2[tpc][plane].pcolormesh(freq,range(plotter.maxwires),Sorted_PSD[tpc][plane],cmap = cmap,shading='gouraud',vmin = -1, vmax = 1)) #default 1.3,3.3
                 if(plane!=2):
                     ax2[tpc][plane].set_ylim(0,200)
@@ -150,7 +150,108 @@ class plotter:
                 ax2[tpc][plane].set_xlabel("Freq [Hz]")
                 ax2[tpc][plane].set_ylabel("Channel Number")
                 ax2[tpc][plane].set_title("Averaged Channel FFT for TPC: " + str(tpc) + " Wire Plane: " + planenames[plane])
+        fig.tight_layout()
+        fig2.tight_layout()
         plt.show()
+        fig.savefig(outputFile1, dpi = fig.dpi)
+        fig2.savefig(outputFile2, dpi = fig2.dpi)
+
+    #Hist2DFuncByPlane
+    #
+    #Plotting function that takes in a Func[GlobalChan][Freq] and plots it by plane
+    #Function 
+    #
+    #INPUTS: Func[GlobalChannel][Freq]
+    #
+    def Hist2DFuncByPlane(Func,outputFile1 = 'FuncHisto.svg',outputFile2 = 'Func2D.svg',logmode = False, maxval = 1, minval = -1,funclabel = "Average FFT",units = "1/Hz^0.5"):
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import matplotlib as mpl
+        from mpl_toolkits.axes_grid1 import make_axes_locatable   
+                
+        #For histogram of overlayed function for each channel
+        fig,ax = plt.subplots(plotter.numtpcs,plotter.numplanes,num=1)
+        fig.set_figheight(5*plotter.numtpcs)
+        fig.set_figwidth(5*plotter.numplanes)
+        
+        #For plot of freq v. channel # v. color
+        fig2,ax2 = plt.subplots(plotter.numtpcs,plotter.numplanes,num=2)
+        fig2.set_figheight(plotter.numtpcs*5)
+        fig2.set_figwidth(plotter.numplanes*5)
+
+        planenames = ["u", "v", "z"]
+        
+        Sorted_Func = plotter.convert_to_sorted(Func)
+        
+        for tpc in range(plotter.numtpcs):
+            for plane in range(plotter.numplanes):
+                freq = np.fft.rfftfreq(plotter.minwvfm,plotter.SampleSpacing)
+
+                #The 2d histogram takes only 1d arrays
+                #so we have to flatten out our AvgASD array into one long array
+                #also we have to do the same for the frequencies
+
+                #First sanitize:
+                #Delete first column of this array because it's all zeros
+                SanitizedFunc = Sorted_Func[tpc][plane][:,1:]
+
+                #Delete rows added in the sorting function:
+                if plane!=2:
+                    SanitizedFunc = SanitizedFunc[:200]
+
+                #Delete nan rows:
+                SanitizedFunc = SanitizedFunc[~np.isnan(SanitizedFunc).all(axis=1)]
+
+                longFuncHist = np.empty(0,dtype=float)
+                longFreq = np.empty(0,dtype=float)
+                for channel in range(len(SanitizedFunc)):
+                    longFuncHist = np.concatenate((longFuncHist, SanitizedFunc[channel]))
+                    longFreq = np.concatenate((longFreq, freq[1:]))
+                
+                #For 2D plot
+                if logmode:
+                    Data = np.log10(Sorted_Func[tpc][plane])
+                else:
+                    Data = Sorted_Func[tpc][plane]
+
+                cmap = mpl.cm.get_cmap('viridis')
+                cmap.set_under('white')
+                ax2[tpc][plane].pcolormesh(freq,range(plotter.maxwires),Data,cmap = cmap,shading='gouraud',vmin = minval, vmax = maxval) #default 1.3,3.3
+                fig2.colorbar(ax2[tpc][plane].pcolormesh(freq,range(plotter.maxwires),Data,cmap = cmap,shading='gouraud',vmin = minval, vmax = maxval)) #default 1.3,3.3
+                if(plane!=2):
+                    ax2[tpc][plane].set_ylim(0,200)
+                
+                #For 2D Hist Plot, we need to use hist2d
+                #Use a viridis colormap that whites out bins with no entries
+                cmap = mpl.cm.get_cmap('viridis')
+                cmap.set_under('white')
+
+                h = ax[tpc][plane].hist2d(longFreq,longFuncHist,bins = [1065,300],cmap = cmap,vmin=1)
+
+                ##Colorbar for each axis of 2D Hist plot
+                divider = make_axes_locatable(ax[tpc][plane])
+                cax = divider.append_axes('right', size='5%', pad=0.05)
+                fig.colorbar(h[3], cax=cax, orientation='vertical')
+
+                    
+                if logmode:
+                    ax[tpc][plane].set_yscale("log")
+                else:    
+                    ax[tpc][plane].set_yscale("linear") 
+
+                ax[tpc][plane].set_xlabel("Freq [1e6 Hz]")
+                ax[tpc][plane].set_ylabel(funclabel+" ["+units+"]")
+                ax[tpc][plane].set_title(funclabel+" for TPC: " + str(tpc) + " Wire Plane: " + planenames[plane])
+                
+                ax2[tpc][plane].set_xscale("linear")
+                ax2[tpc][plane].set_xlabel("Freq [Hz]")
+                ax2[tpc][plane].set_ylabel("Channel Number")
+                ax2[tpc][plane].set_title(funclabel+" for TPC: " + str(tpc) + " Wire Plane: " + planenames[plane])
+        fig.tight_layout()
+        fig2.tight_layout()
+        plt.show()
+
+        ##Add functionality to save as svg in the future for paper-quality figures
         fig.savefig(outputFile1, dpi = fig.dpi)
         fig2.savefig(outputFile2, dpi = fig2.dpi)
 

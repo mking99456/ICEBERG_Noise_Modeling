@@ -15,7 +15,7 @@ class Analyzer:
 
         infile = uproot.open(Waveform_File_Path)
 
-        key = infile.keys()[returnIndex]
+        key = infile.keys()[2*returnIndex] #going to every other key keeps daq and skips sig
         H, xedges, yedges = infile[key].to_numpy()
         xcenters = Analyzer.EdgesToCenters(xedges)
         timeticks = yedges[:-1]
